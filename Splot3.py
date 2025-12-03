@@ -47,19 +47,27 @@ class FormulaEditDialog(QDialog):
         self.expr_edit = QLineEdit()
         self.layout.addWidget(self.expr_edit)
         
-        # Help / Available Vars
+        # Help / Available Vars with search
         self.layout.addWidget(QLabel("Available Variables (Click to copy):"))
+        
+        # Search bar for variables
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Search:"))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Filter variables...")
+        self.search_edit.textChanged.connect(self.filter_variables)
+        search_layout.addWidget(self.search_edit)
+        self.layout.addLayout(search_layout)
+        
         self.var_list = QTableWidget(0, 1)
         self.var_list.horizontalHeader().setVisible(False)
         self.var_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.var_list.itemClicked.connect(self.copy_var)
         self.layout.addWidget(self.var_list)
 
-        if available_vars:
-            for v in available_vars:
-                r = self.var_list.rowCount()
-                self.var_list.insertRow(r)
-                self.var_list.setItem(r, 0, QTableWidgetItem(v))
+        # Store all available vars for filtering
+        self.all_vars = available_vars if available_vars else []
+        self.populate_var_list(self.all_vars)
 
         # Buttons
         btns = QHBoxLayout()
@@ -82,6 +90,22 @@ class FormulaEditDialog(QDialog):
         txt = item.text()
         self.expr_edit.insert(txt)
         self.expr_edit.setFocus()
+
+    def populate_var_list(self, vars_to_show):
+        """Populate the variable list table with given variables."""
+        self.var_list.setRowCount(0)
+        for v in vars_to_show:
+            r = self.var_list.rowCount()
+            self.var_list.insertRow(r)
+            self.var_list.setItem(r, 0, QTableWidgetItem(v))
+
+    def filter_variables(self, text):
+        """Filter variables based on search text (case-insensitive)."""
+        if not text.strip():
+            self.populate_var_list(self.all_vars)
+        else:
+            filtered = [v for v in self.all_vars if text.lower() in v.lower()]
+            self.populate_var_list(filtered)
 
     def get_data(self):
         return {
