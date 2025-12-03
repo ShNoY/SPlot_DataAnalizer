@@ -1687,14 +1687,17 @@ class SPlotApp(QMainWindow):
         self.file_combo.currentIndexChanged.connect(self.on_file_changed)
         bl.addWidget(self.file_combo)
 
+        # ===== X-Axis Section =====
+        bl.addWidget(QLabel("<b>X-Axis</b>"))
         self.x_search = QLineEdit()
         self.x_search.setPlaceholderText("Search X...")
         self.x_search.textChanged.connect(self.filter_xaxis)
         bl.addWidget(self.x_search)
-        bl.addWidget(QLabel("X-Axis:"))
         self.xaxis_combo = QComboBox()
         bl.addWidget(self.xaxis_combo)
 
+        # ===== Y-Axis Section =====
+        bl.addWidget(QLabel("<b>Y-Axis)</b>"))
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search Labels (*=wildcard)...")
         self.search_bar.textChanged.connect(self.filter_labels)
