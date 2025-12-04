@@ -350,36 +350,83 @@ class TraceSettingsDialog(QDialog):
         # Style Tab
         tab_style = QWidget()
         l_style = QVBoxLayout(tab_style)
-        grp_line = QGroupBox("Line Style")
+        
+        # Line Section
+        grp_line = QGroupBox("Line")
         fl = QFormLayout(grp_line)
-        self.width_spin = QDoubleSpinBox()
-        self.width_spin.setValue(self.t.get('linewidth', 1.0))
-        self.width_spin.valueChanged.connect(lambda: self.mark_modified('linewidth'))
-        self.color_btn = QPushButton()
-        self.color = self.t.get('color', '#000000')
-        self.color_btn.setStyleSheet(f"background-color: {self.color}")
-        self.color_btn.clicked.connect(self.pick_color)
+        
+        # Line style
         self.style_combo = QComboBox()
-        self.style_combo.addItems(["- (Solid)", "-- (Dashed)", ": (Dotted)", "-. (DashDot)", "None"])
+        self.style_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot", "None"])
         inv_style = {'-': 0, '--': 1, ':': 2, '-.': 3, 'None': 4}
-        if self.t.get('linestyle') in inv_style:
-            self.style_combo.setCurrentIndex(inv_style[self.t['linestyle']])
+        current_style = self.t.get('linestyle', '-')
+        if current_style in inv_style:
+            self.style_combo.setCurrentIndex(inv_style[current_style])
         self.style_combo.currentIndexChanged.connect(lambda: self.mark_modified('linestyle'))
+        
+        # Draw style (always "Default" for now, can be extended)
+        self.draw_style_combo = QComboBox()
+        self.draw_style_combo.addItems(["Default"])
+        self.draw_style_combo.setCurrentIndex(0)
+        
+        # Line width
+        self.width_spin = QDoubleSpinBox()
+        self.width_spin.setRange(0.1, 20)
+        self.width_spin.setValue(self.t.get('linewidth', 1.5))
+        self.width_spin.valueChanged.connect(lambda: self.mark_modified('linewidth'))
+        
+        # Line color
+        self.color_btn = QPushButton()
+        self.color = self.t.get('color', '#1f77b4')
+        self.color_btn.setStyleSheet(f"background-color: {self.color}")
+        self.color_btn.setFixedHeight(30)
+        self.color_btn.clicked.connect(self.pick_color)
+        
+        fl.addRow("Line style:", self.style_combo)
+        fl.addRow("Draw style:", self.draw_style_combo)
         fl.addRow("Width:", self.width_spin)
-        fl.addRow("Color:", self.color_btn)
-        fl.addRow("Style:", self.style_combo)
+        fl.addRow("Color (RGBA):", self.color_btn)
         l_style.addWidget(grp_line)
-
-        grp_sym = QGroupBox("Symbol")
-        fs = QFormLayout(grp_sym)
-        self.sym_combo = QComboBox()
-        self.sym_combo.addItems(["None", "o (Circle)", "^ (Triangle)", "s (Square)", "+ (Plus)", "x (Cross)"])
-        inv_sym = {'None': 0, 'o': 1, '^': 2, 's': 3, '+': 4, 'x': 5}
-        if self.t.get('marker') in inv_sym:
-            self.sym_combo.setCurrentIndex(inv_sym[self.t['marker']])
-        self.sym_combo.currentIndexChanged.connect(lambda: self.mark_modified('marker'))
-        fs.addRow("Marker:", self.sym_combo)
-        l_style.addWidget(grp_sym)
+        
+        # Marker Section
+        grp_marker = QGroupBox("Marker")
+        fm = QFormLayout(grp_marker)
+        
+        # Marker style
+        self.marker_style_combo = QComboBox()
+        self.marker_style_combo.addItems(["nothing", "o", "^", "s", "+", "x", "*", "D", "v", "<", ">"])
+        marker_map = {'nothing': 0, 'o': 1, '^': 2, 's': 3, '+': 4, 'x': 5, '*': 6, 'D': 7, 'v': 8, '<': 9, '>': 10}
+        current_marker = self.t.get('marker', 'nothing')
+        if current_marker in marker_map:
+            self.marker_style_combo.setCurrentIndex(marker_map[current_marker])
+        self.marker_style_combo.currentIndexChanged.connect(lambda: self.mark_modified('marker'))
+        
+        # Marker size
+        self.marker_size_spin = QDoubleSpinBox()
+        self.marker_size_spin.setRange(1, 100)
+        self.marker_size_spin.setValue(self.t.get('markersize', 2.0))
+        self.marker_size_spin.valueChanged.connect(lambda: self.mark_modified('markersize'))
+        
+        # Marker face color
+        self.marker_face_color_btn = QPushButton()
+        self.marker_face_color = self.t.get('marker_face_color', '#1f77b4')
+        self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
+        self.marker_face_color_btn.setFixedHeight(30)
+        self.marker_face_color_btn.clicked.connect(self.pick_marker_face_color)
+        
+        # Marker edge color
+        self.marker_edge_color_btn = QPushButton()
+        self.marker_edge_color = self.t.get('marker_edge_color', '#1f77b4')
+        self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
+        self.marker_edge_color_btn.setFixedHeight(30)
+        self.marker_edge_color_btn.clicked.connect(self.pick_marker_edge_color)
+        
+        fm.addRow("Style:", self.marker_style_combo)
+        fm.addRow("Size:", self.marker_size_spin)
+        fm.addRow("Face color (RGBA):", self.marker_face_color_btn)
+        fm.addRow("Edge color (RGBA):", self.marker_edge_color_btn)
+        l_style.addWidget(grp_marker)
+        
         tabs.addTab(tab_style, "Style")
 
         # Math Tab
@@ -525,6 +572,20 @@ class TraceSettingsDialog(QDialog):
             self.color_btn.setStyleSheet(f"background-color: {self.color}")
             self.mark_modified('color')
 
+    def pick_marker_face_color(self):
+        c = QColorDialog.getColor(QColor(self.marker_face_color))
+        if c.isValid():
+            self.marker_face_color = c.name()
+            self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
+            self.mark_modified('marker_face_color')
+
+    def pick_marker_edge_color(self):
+        c = QColorDialog.getColor(QColor(self.marker_edge_color))
+        if c.isValid():
+            self.marker_edge_color = c.name()
+            self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
+            self.mark_modified('marker_edge_color')
+
     def get_data(self):
         data = {}
         if 'label' in self.modified_fields and self.lbl_edit.text():
@@ -539,11 +600,22 @@ class TraceSettingsDialog(QDialog):
         if 'color' in self.modified_fields:
             data['color'] = self.color
         if 'linestyle' in self.modified_fields:
-            s_txt = self.style_combo.currentText()
-            data['linestyle'] = '-' if "Solid" in s_txt else '--' if "Dashed" in s_txt else ':' if "Dotted" in s_txt else '-.' if "DashDot" in s_txt else 'None'
+            # Map text to matplotlib linestyle
+            style_map = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'DashDot': '-.', 'None': 'None'}
+            data['linestyle'] = style_map.get(self.style_combo.currentText(), '-')
+        
         if 'marker' in self.modified_fields:
-            m_txt = self.sym_combo.currentText()
-            data['marker'] = 'None' if "None" in m_txt else 'o' if "Circle" in m_txt else '^' if "Triangle" in m_txt else 's' if "Square" in m_txt else '+' if "Plus" in m_txt else 'x'
+            marker_text = self.marker_style_combo.currentText()
+            data['marker'] = marker_text if marker_text != 'nothing' else 'None'
+        
+        if 'markersize' in self.modified_fields:
+            data['markersize'] = self.marker_size_spin.value()
+        
+        if 'marker_face_color' in self.modified_fields:
+            data['marker_face_color'] = self.marker_face_color
+        
+        if 'marker_edge_color' in self.modified_fields:
+            data['marker_edge_color'] = self.marker_edge_color
 
         if 'x_factor' in self.modified_fields:
             data['x_factor'] = self.x_fac.value()
@@ -619,11 +691,6 @@ class DiagramSettingsDialog(QDialog):
         self.yscale_combo_l.addItems(["Linear", "Log"])
         self.yscale_combo_l.setCurrentIndex(0 if ax_left.get_yscale() == 'linear' else 1)
         
-        # Marker size
-        self.marker_size = QDoubleSpinBox()
-        self.marker_size.setRange(1, 100)
-        self.marker_size.setValue(6.0)
-        
         xlim = ax_left.get_xlim()
         ylim_l = ax_left.get_ylim()
         self.xmin = QDoubleSpinBox()
@@ -645,7 +712,6 @@ class DiagramSettingsDialog(QDialog):
         fl.addRow("Y Range:", self.layout_range(self.ymin_l, self.ymax_l))
         fl.addRow("X Scale:", self.xscale_combo)
         fl.addRow("Y Scale:", self.yscale_combo_l)
-        fl.addRow("Marker Size:", self.marker_size)
         fl.addRow(self.grid_l)
         l_ax.addWidget(grp_l)
 
@@ -739,14 +805,6 @@ class DiagramSettingsDialog(QDialog):
             self.ax_r.set_ylim(self.ymin_r.value(), self.ymax_r.value())
             yscale_text_r = self.yscale_combo_r.currentText().lower()
             self.ax_r.set_yscale(yscale_text_r)
-        
-        # Apply marker size to all traces on this canvas
-        marker_size = self.marker_size.value()
-        if self.parent_canvas:
-            for tid, t in self.parent_canvas.traces.items():
-                line = t.get('line')
-                if line:
-                    line.set_markersize(marker_size)
         
         # Also update stored axis label info for traces so Data Manager reflects changes
         try:
@@ -1679,6 +1737,12 @@ class PageCanvas(QWidget):
             t['line'].set_linestyle(s['linestyle'])
         if 'marker' in s:
             t['line'].set_marker(s['marker'])
+        if 'markersize' in s:
+            t['line'].set_markersize(s['markersize'])
+        if 'marker_face_color' in s:
+            t['line'].set_markerfacecolor(s['marker_face_color'])
+        if 'marker_edge_color' in s:
+            t['line'].set_markeredgecolor(s['marker_edge_color'])
 
         if 'ax_xlabel' in s:
             primary.set_xlabel(s['ax_xlabel'])
