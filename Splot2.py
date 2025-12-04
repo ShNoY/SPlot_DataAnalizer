@@ -835,7 +835,10 @@ class DiagramSettingsDialog(QDialog):
 
                         if upd:
                             parent.update_trace(tid, upd)
-        except Exception:
+                
+                # Redraw canvas to reflect changes
+                parent.canvas.draw()
+        except Exception as e:
             pass
 
         self.accept()
