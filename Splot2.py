@@ -321,12 +321,13 @@ class NewPageDialog(QDialog):
         return self.rows.value(), self.cols.value()
 
 class TraceSettingsDialog(QDialog):
-    def __init__(self, trace_info, parent=None):
+    def __init__(self, trace_info, parent=None, available_vars=None):
         super().__init__(parent)
         self.setWindowTitle("Dataset & Axis Settings")
         self.resize(450, 650)
         self.t = trace_info
         self.modified_fields = set()
+        self.available_vars = available_vars if available_vars else []
         layout = QVBoxLayout()
 
         grp_gen = QGroupBox("General")
@@ -429,6 +430,26 @@ class TraceSettingsDialog(QDialog):
         tab_axis = QWidget()
         l_axis = QVBoxLayout(tab_axis)
         l_axis.addWidget(QLabel("Leave blank to keep current settings."))
+        
+        # X-Axis Reference
+        grp_xref = QGroupBox("X-Axis Reference")
+        fxref = QFormLayout(grp_xref)
+        self.xkey_combo = QComboBox()
+        self.xkey_combo.addItem("Keep (Current)")
+        if self.available_vars:
+            for var in self.available_vars:
+                self.xkey_combo.addItem(var)
+        curr_xkey = self.t.get('x_key', 'index')
+        if curr_xkey == 'index':
+            self.xkey_combo.setCurrentIndex(0)
+        else:
+            idx = self.xkey_combo.findText(curr_xkey)
+            if idx >= 0:
+                self.xkey_combo.setCurrentIndex(idx)
+        self.xkey_combo.currentIndexChanged.connect(lambda: self.mark_modified('x_key'))
+        fxref.addRow("X Data Source:", self.xkey_combo)
+        l_axis.addWidget(grp_xref)
+        
         grp_lbl = QGroupBox("Axis Labels")
         flb = QFormLayout(grp_lbl)
         self.ax_xlab = QLineEdit()
@@ -1697,7 +1718,7 @@ class SPlotApp(QMainWindow):
         bl.addWidget(self.xaxis_combo)
 
         # ===== Y-Axis Section =====
-        bl.addWidget(QLabel("<b>Y-Axis)</b>"))
+        bl.addWidget(QLabel("<b>Y-Axis</b>"))
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search Labels (*=wildcard)...")
         self.search_bar.textChanged.connect(self.filter_labels)

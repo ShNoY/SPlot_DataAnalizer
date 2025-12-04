@@ -197,6 +197,7 @@ class FormulaManagerDialog(QDialog):
             if data['name'] and data['expression']:
                 self.formulas.append(data)
                 self.refresh_table()
+                self.mw.save_formulas_auto()
 
     def edit_formula(self):
         row = self.table.currentRow()
@@ -207,23 +208,39 @@ class FormulaManagerDialog(QDialog):
             if data['name'] and data['expression']:
                 self.formulas[row] = data
                 self.refresh_table()
+                self.mw.save_formulas_auto()
 
     def delete_formula(self):
         row = self.table.currentRow()
         if row >= 0:
             del self.formulas[row]
             self.refresh_table()
+            self.mw.save_formulas_auto()
 
     def import_formulas(self):
         p, _ = QFileDialog.getOpenFileName(self, "Import Formulas", "", "JSON (*.json);;All (*)")
         if p:
             try:
                 with open(p, 'r', encoding='utf-8') as f:
-                    new_formulas = json.load(f)
-                    if isinstance(new_formulas, list):
-                        self.formulas.extend(new_formulas)
+                    imported_formulas = json.load(f)
+                    if isinstance(imported_formulas, list):
+                        # Get existing formula names to avoid duplicates
+                        existing_names = {f['name'] for f in self.formulas}
+                        
+                        added_count = 0
+                        for new_f in imported_formulas:
+                            if new_f.get('name') and new_f['name'] not in existing_names:
+                                self.formulas.append(new_f)
+                                existing_names.add(new_f['name'])
+                                added_count += 1
+                        
                         self.refresh_table()
-                        QMessageBox.information(self, "Success", f"Imported {len(new_formulas)} formulas.")
+                        self.mw.save_formulas_auto()
+                        
+                        if added_count > 0:
+                            QMessageBox.information(self, "Success", f"Added {added_count} new formulas (duplicates skipped).")
+                        else:
+                            QMessageBox.information(self, "Info", "All formulas were already present (no duplicates added).")
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
 
@@ -232,8 +249,9 @@ class FormulaManagerDialog(QDialog):
         if p:
             try:
                 with open(p, 'w', encoding='utf-8') as f:
-                    json.dump(self.formulas, f, indent=4)
-                QMessageBox.information(self, "Success", "Formulas exported.")
+                    json.dump(self.formulas, f, indent=4, ensure_ascii=False)
+                QMessageBox.information(self, "Success", f"Formulas exported to {os.path.basename(p)}.")
+                self.mw.save_formulas_auto()
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
 
@@ -260,8 +278,15 @@ class SPlotWithMath(Splot2.SPlotApp):
         
         self.setWindowTitle("SPlot - Ultimate Fixed v23 + Math Extension")
         
+        # Default formula file path (same directory as this script)
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.formula_file = os.path.join(self.script_dir, "formulas.json")
+        
         # 数式データの保持リスト [{'name': 'P', 'unit': 'W', 'expression': 'V*I'}, ...]
         self.formulas = []
+        
+        # Auto-load formulas from default file if it exists
+        self.load_formulas_auto()
         
         # Math用のUIセットアップ
         self.setup_math_ui()
@@ -280,6 +305,28 @@ class SPlotWithMath(Splot2.SPlotApp):
             act_calc = QAction("Calc Now", self)
             act_calc.triggered.connect(lambda: self.calculate_formulas_interactive())
             tb.addAction(act_calc)
+
+    def load_formulas_auto(self):
+        """Auto-load formulas from default JSON file if it exists."""
+        if os.path.exists(self.formula_file):
+            try:
+                with open(self.formula_file, 'r', encoding='utf-8') as f:
+                    self.formulas = json.load(f)
+                    if not isinstance(self.formulas, list):
+                        self.formulas = []
+            except Exception as e:
+                print(f"Warning: Failed to load formulas from {self.formula_file}: {e}")
+                self.formulas = []
+        else:
+            self.formulas = []
+
+    def save_formulas_auto(self):
+        """Auto-save formulas to default JSON file."""
+        try:
+            with open(self.formula_file, 'w', encoding='utf-8') as f:
+                json.dump(self.formulas, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: Failed to save formulas to {self.formula_file}: {e}")
 
     def open_formula_manager(self):
         dlg = FormulaManagerDialog(self)
