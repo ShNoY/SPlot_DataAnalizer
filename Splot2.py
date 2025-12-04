@@ -439,6 +439,12 @@ class TraceSettingsDialog(QDialog):
         if self.available_vars:
             for var in self.available_vars:
                 self.xkey_combo.addItem(var)
+        
+        # Connect signal first to capture user changes only
+        self.xkey_combo.currentIndexChanged.connect(self._on_xkey_changed)
+        
+        # Then set initial value with signals blocked
+        self.xkey_combo.blockSignals(True)
         curr_xkey = self.t.get('x_key', 'index')
         if curr_xkey == 'index':
             self.xkey_combo.setCurrentIndex(0)
@@ -446,7 +452,8 @@ class TraceSettingsDialog(QDialog):
             idx = self.xkey_combo.findText(curr_xkey)
             if idx >= 0:
                 self.xkey_combo.setCurrentIndex(idx)
-        self.xkey_combo.currentIndexChanged.connect(lambda: self.mark_modified('x_key'))
+        self.xkey_combo.blockSignals(False)
+        
         fxref.addRow("X Data Source:", self.xkey_combo)
         l_axis.addWidget(grp_xref)
         
@@ -508,6 +515,9 @@ class TraceSettingsDialog(QDialog):
     def mark_modified(self, field):
         self.modified_fields.add(field)
 
+    def _on_xkey_changed(self):
+        self.mark_modified('x_key')
+
     def pick_color(self):
         c = QColorDialog.getColor(QColor(self.color))
         if c.isValid():
@@ -565,6 +575,12 @@ class TraceSettingsDialog(QDialog):
             data['ax_ymin'] = parse(self.ax_ymin.text())
         if 'ax_ymax' in self.modified_fields:
             data['ax_ymax'] = parse(self.ax_ymax.text())
+        
+        if 'x_key' in self.modified_fields:
+            idx = self.xkey_combo.currentIndex()
+            if idx > 0:  # Index 0 is "Keep (Current)"
+                data['x_key'] = self.xkey_combo.currentText()
+        
         return data
 
 class DiagramSettingsDialog(QDialog):
@@ -592,8 +608,22 @@ class DiagramSettingsDialog(QDialog):
             pass
         self.grid_l = QCheckBox("Grid")
         self.grid_l.setChecked(is_grid_l)
-        self.log_l = QCheckBox("Log Scale")
-        self.log_l.setChecked(ax_left.get_yscale() == 'log')
+        
+        # X-axis scale
+        self.xscale_combo = QComboBox()
+        self.xscale_combo.addItems(["Linear", "Log"])
+        self.xscale_combo.setCurrentIndex(0 if ax_left.get_xscale() == 'linear' else 1)
+        
+        # Y-axis scale (replaced checkbox with combo)
+        self.yscale_combo_l = QComboBox()
+        self.yscale_combo_l.addItems(["Linear", "Log"])
+        self.yscale_combo_l.setCurrentIndex(0 if ax_left.get_yscale() == 'linear' else 1)
+        
+        # Marker size
+        self.marker_size = QDoubleSpinBox()
+        self.marker_size.setRange(1, 100)
+        self.marker_size.setValue(6.0)
+        
         xlim = ax_left.get_xlim()
         ylim_l = ax_left.get_ylim()
         self.xmin = QDoubleSpinBox()
@@ -613,8 +643,10 @@ class DiagramSettingsDialog(QDialog):
         fl.addRow("Y Label:", self.yl_l)
         fl.addRow("X Range:", self.layout_range(self.xmin, self.xmax))
         fl.addRow("Y Range:", self.layout_range(self.ymin_l, self.ymax_l))
+        fl.addRow("X Scale:", self.xscale_combo)
+        fl.addRow("Y Scale:", self.yscale_combo_l)
+        fl.addRow("Marker Size:", self.marker_size)
         fl.addRow(self.grid_l)
-        fl.addRow(self.log_l)
         l_ax.addWidget(grp_l)
 
         if self.ax_r:
@@ -628,11 +660,13 @@ class DiagramSettingsDialog(QDialog):
             self.ymax_r = QDoubleSpinBox()
             self.ymax_r.setRange(-1e12, 1e12)
             self.ymax_r.setValue(ylim_r[1])
-            self.log_r = QCheckBox("Log Scale")
-            self.log_r.setChecked(ax_right.get_yscale() == 'log')
+            # Y-axis scale (replaced checkbox with combo)
+            self.yscale_combo_r = QComboBox()
+            self.yscale_combo_r.addItems(["Linear", "Log"])
+            self.yscale_combo_r.setCurrentIndex(0 if ax_right.get_yscale() == 'linear' else 1)
             fr.addRow("Y Label:", self.yl_r)
             fr.addRow("Y Range:", self.layout_range(self.ymin_r, self.ymax_r))
-            fr.addRow(self.log_r)
+            fr.addRow("Y Scale:", self.yscale_combo_r)
             btn_rem = QPushButton("Remove Right Axis (Move Traces to Left)")
             btn_rem.clicked.connect(self.remove_right_axis)
             fr.addRow(btn_rem)
@@ -694,11 +728,26 @@ class DiagramSettingsDialog(QDialog):
         self.ax_l.set_xlim(self.xmin.value(), self.xmax.value())
         self.ax_l.set_ylim(self.ymin_l.value(), self.ymax_l.value())
         self.ax_l.grid(self.grid_l.isChecked())
-        self.ax_l.set_yscale('log' if self.log_l.isChecked() else 'linear')
+        # Set X and Y scale from combo boxes
+        xscale_text = self.xscale_combo.currentText().lower()
+        yscale_text_l = self.yscale_combo_l.currentText().lower()
+        self.ax_l.set_xscale(xscale_text)
+        self.ax_l.set_yscale(yscale_text_l)
+        
         if self.ax_r:
             self.ax_r.set_ylabel(self.yl_r.text())
             self.ax_r.set_ylim(self.ymin_r.value(), self.ymax_r.value())
-            self.ax_r.set_yscale('log' if self.log_r.isChecked() else 'linear')
+            yscale_text_r = self.yscale_combo_r.currentText().lower()
+            self.ax_r.set_yscale(yscale_text_r)
+        
+        # Apply marker size to all traces on this canvas
+        marker_size = self.marker_size.value()
+        if self.parent_canvas:
+            for tid, t in self.parent_canvas.traces.items():
+                line = t.get('line')
+                if line:
+                    line.set_markersize(marker_size)
+        
         # Also update stored axis label info for traces so Data Manager reflects changes
         try:
             parent = self.parent_canvas
@@ -957,6 +1006,17 @@ class DataManagerDialog(QDialog):
             return
         fname = self.file_tbl.item(rows[0].row(), 1).text()
 
+        # Collect available variables from file_data_map
+        available_vars = []
+        if hasattr(self.mw, 'file_data_map') and self.mw.file_data_map:
+            for file_key in self.mw.file_data_map:
+                file_info = self.mw.file_data_map[file_key]
+                ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
+                if ds is not None and hasattr(ds, 'data_vars'):
+                    for var_name in ds.data_vars:
+                        if var_name not in available_vars:
+                            available_vars.append(var_name)
+
         # Dummy trace for TraceSettingsDialog
         dummy = {
             "label": "",
@@ -975,7 +1035,7 @@ class DataManagerDialog(QDialog):
             "yaxis": "left",
             "yscale": "linear",
         }
-        dlg = TraceSettingsDialog(dummy, self)
+        dlg = TraceSettingsDialog(dummy, self, available_vars=available_vars)
         if dlg.exec():
             settings = dlg.get_data()
             cnt = 0
@@ -1119,7 +1179,19 @@ class DataManagerDialog(QDialog):
         if not sel:
             return
         pg0, tid0 = sel[0]
-        dlg = TraceSettingsDialog(pg0.traces[tid0], self)
+        
+        # Get file_data_map from main_window (SPlotApp)
+        available_vars = []
+        if hasattr(self.mw, 'file_data_map') and self.mw.file_data_map:
+            for file_key in self.mw.file_data_map:
+                file_info = self.mw.file_data_map[file_key]
+                ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
+                if ds is not None and hasattr(ds, 'data_vars'):
+                    for var_name in ds.data_vars:
+                        if var_name not in available_vars:
+                            available_vars.append(var_name)
+        
+        dlg = TraceSettingsDialog(pg0.traces[tid0], self, available_vars=available_vars)
         if not dlg.exec():
             return
         settings = dlg.get_data()
@@ -1211,10 +1283,11 @@ class PageCanvas(QWidget):
     # For X-Link IDs shared across pages
     global_xlim_changed = pyqtSignal(str, float, float)
 
-    def __init__(self, rows=1, cols=1):
+    def __init__(self, rows=1, cols=1, parent_app=None):
         super().__init__()
         self.rows = rows
         self.cols = cols
+        self.parent_app = parent_app  # Reference to SPlotApp for file_data_map access
 
         # Traces {tid: {...}}
         self.traces = {}
@@ -1459,7 +1532,18 @@ class PageCanvas(QWidget):
             self.edit_trace_by_id(tid)
 
     def edit_trace_by_id(self, tid):
-        dlg = TraceSettingsDialog(self.traces[tid], self)
+        # Collect available variables from parent app's file_data_map
+        available_vars = []
+        if self.parent_app and hasattr(self.parent_app, 'file_data_map'):
+            for file_key in self.parent_app.file_data_map:
+                file_info = self.parent_app.file_data_map[file_key]
+                ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
+                if ds is not None and hasattr(ds, 'data_vars'):
+                    for var_name in ds.data_vars:
+                        if var_name not in available_vars:
+                            available_vars.append(var_name)
+        
+        dlg = TraceSettingsDialog(self.traces[tid], self, available_vars=available_vars)
         if dlg.exec():
             self.update_trace(tid, dlg.get_data())
 
@@ -1606,6 +1690,42 @@ class PageCanvas(QWidget):
             t['ax_ylabel'] = s['ax_ylabel']
         if 'yscale' in s:
             req_ax.set_yscale(s['yscale'])
+
+        # Handle X-axis reference change
+        if 'x_key' in s:
+            print(f"[DEBUG] update_trace: x_key changed from {t['x_key']} to {s['x_key']}")
+            t['x_key'] = s['x_key']
+            # Reload raw_x data with new x_key
+            fname = t['file']
+            print(f"[DEBUG] update_trace: fname={fname}, parent_app={self.parent_app}")
+            try:
+                if self.parent_app and hasattr(self.parent_app, 'file_data_map'):
+                    file_data_map = self.parent_app.file_data_map
+                    print(f"[DEBUG] update_trace: file_data_map keys={list(file_data_map.keys())}")
+                    if fname in file_data_map:
+                        ds = file_data_map[fname]['ds']
+                        print(f"[DEBUG] update_trace: ds data_vars={list(ds.data_vars)}")
+                        if t['x_key'] == 'index':
+                            if 'index' in ds.coords:
+                                old_len = len(t['raw_x'])
+                                t['raw_x'] = ds.coords['index'].values
+                                new_len = len(t['raw_x'])
+                                print(f"[DEBUG] update_trace: reloaded raw_x from index: {old_len} -> {new_len}")
+                        elif t['x_key'] in ds:
+                            old_len = len(t['raw_x'])
+                            t['raw_x'] = ds[t['x_key']].values
+                            new_len = len(t['raw_x'])
+                            print(f"[DEBUG] update_trace: reloaded raw_x from {t['x_key']}: {old_len} -> {new_len}")
+                        else:
+                            print(f"[DEBUG] update_trace: x_key '{t['x_key']}' not in dataset")
+                    else:
+                        print(f"[DEBUG] update_trace: fname '{fname}' not in file_data_map")
+                else:
+                    print(f"[DEBUG] update_trace: parent_app not available")
+            except Exception as e:
+                print(f"[DEBUG] update_trace: Exception: {e}")
+                # Continue anyway, use existing raw_x
+                pass
 
         rx, ry = t['raw_x'], t['raw_y']
         trans = t.get('transform', 'None')
@@ -1878,7 +1998,7 @@ class SPlotApp(QMainWindow):
     def add_page_direct(self, r, c, push=True):
         if push:
             self.undo_mgr.push("Add New Page")
-        pg = PageCanvas(r, c)
+        pg = PageCanvas(r, c, parent_app=self)
         pg.refresh_requested.connect(self.show_refresh_dialog)
         pg.sync_requested.connect(lambda: self.show_sync_dialog(scope='active'))
         pg.sync_all_requested.connect(lambda: self.show_sync_dialog(scope='all'))
