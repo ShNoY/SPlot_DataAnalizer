@@ -1727,6 +1727,9 @@ class PageCanvas(QWidget):
         
         self.canvas = FigureCanvas(self.fig)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        # Remove 'Subplots' and 'Customize' options from toolbar
+        self.toolbar.actions()[7].setVisible(False)  # Subplots
+        self.toolbar.actions()[8].setVisible(False)  # Customize
 
         # Axis creation
         self.axes = []
