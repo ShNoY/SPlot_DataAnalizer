@@ -657,6 +657,43 @@ class TraceAxisTab(QWidget):
         fxref.addRow("X Data Source:", self.xkey_combo)
         layout.addWidget(grp_xref)
         
+        # Font Settings
+        grp_font = QGroupBox("Font Settings")
+        fft = QFormLayout(grp_font)
+        
+        # Get all available fonts from system
+        import matplotlib.font_manager as fm
+        available_fonts = sorted(set([f.name for f in fm.fontManager.ttflist]))
+        
+        self.font_combo = QComboBox()
+        self.font_combo.setEditable(True)  # Enable search/filtering
+        self.font_combo.addItems(available_fonts)
+        self.font_combo.currentIndexChanged.connect(lambda: self._mark_modified('font_name'))
+        
+        is_uniform_font, uniform_font = self._check_values_uniform('font_name')
+        if is_uniform_font and uniform_font:
+            idx = self.font_combo.findText(uniform_font)
+            if idx >= 0:
+                self.font_combo.setCurrentIndex(idx)
+            else:
+                # If font not found, add it and select it
+                self.font_combo.addItem(uniform_font)
+                self.font_combo.setCurrentIndex(self.font_combo.count() - 1)
+        
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setMinimum(6)
+        self.font_size_spin.setMaximum(72)
+        self.font_size_spin.setValue(10)
+        self.font_size_spin.valueChanged.connect(lambda: self._mark_modified('font_size'))
+        
+        is_uniform_fontsize, uniform_fontsize = self._check_values_uniform('font_size')
+        if is_uniform_fontsize and uniform_fontsize:
+            self.font_size_spin.setValue(int(uniform_fontsize))
+        
+        fft.addRow("Font Name:", self.font_combo)
+        fft.addRow("Font Size:", self.font_size_spin)
+        layout.addWidget(grp_font)
+        
         # Axis Labels
         grp_lbl = QGroupBox("Axis Labels")
         flb = QFormLayout(grp_lbl)
@@ -901,6 +938,12 @@ class TraceAxisTab(QWidget):
             data['show_xticks'] = self.show_xticks_cb.isChecked()
         if 'show_yticks' in self.modified_fields:
             data['show_yticks'] = self.show_yticks_cb.isChecked()
+        
+        # Add font settings
+        if 'font_name' in self.modified_fields:
+            data['font_name'] = self.font_combo.currentText()
+        if 'font_size' in self.modified_fields:
+            data['font_size'] = self.font_size_spin.value()
         
         return data
 
@@ -2214,7 +2257,9 @@ class PageCanvas(QWidget):
             'show_xlabel': style.get('show_xlabel', True),
             'show_ylabel': style.get('show_ylabel', True),
             'show_xticks': style.get('show_xticks', True),
-            'show_yticks': style.get('show_yticks', True)
+            'show_yticks': style.get('show_yticks', True),
+            'font_name': style.get('font_name', 'Arial'),
+            'font_size': style.get('font_size', 10)
         }
 
         if any([xf != 1, xo != 0, yf != 1, yo != 0, trans != 'None']):
@@ -2326,6 +2371,29 @@ class PageCanvas(QWidget):
             show = s['show_yticks']
             req_ax.yaxis.set_visible(show)
             t['show_yticks'] = show
+
+        # Handle font settings
+        if 'font_name' in s or 'font_size' in s:
+            import matplotlib.font_manager
+            font_name = s.get('font_name', t.get('font_name', 'Arial'))
+            font_size = s.get('font_size', t.get('font_size', 10))
+            font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+            
+            # Apply font to axis labels
+            primary.xaxis.label.set_fontproperties(font_prop)
+            req_ax.yaxis.label.set_fontproperties(font_prop)
+            
+            # Apply font to tick labels
+            for label in primary.get_xticklabels():
+                label.set_fontproperties(font_prop)
+            for label in req_ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            
+            # Store in trace
+            if 'font_name' in s:
+                t['font_name'] = s['font_name']
+            if 'font_size' in s:
+                t['font_size'] = s['font_size']
 
         # Handle X-axis reference change
         if 'x_key' in s:
