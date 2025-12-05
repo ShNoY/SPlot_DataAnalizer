@@ -974,15 +974,15 @@ class DataManagerDialog(QDialog):
         tab_files = QWidget()
         lf = QVBoxLayout(tab_files)
 
-        self.file_tbl = QTableWidget(0, 5)
+        self.file_tbl = QTableWidget(0, 4)
         self.file_tbl.setHorizontalHeaderLabels(
-            ["No.", "File Name", "Action", "New Path", "Color"]
+            ["No.", "File Name", "File Path", "Color"]
         )
         self.file_tbl.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
         self.file_tbl.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.Stretch
         )
         self.file_tbl.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -990,17 +990,14 @@ class DataManagerDialog(QDialog):
         lf.addWidget(self.file_tbl)
 
         hb1 = QHBoxLayout()
-        btn_set_rep = QPushButton("Set Replace...")
+        btn_set_rep = QPushButton("Replace File...")
         btn_set_rep.clicked.connect(self.set_replace)
-        btn_app_rep = QPushButton("Apply Changes")
-        btn_app_rep.clicked.connect(self.apply_replace)
         btn_rm_file = QPushButton("Remove")
         btn_rm_file.clicked.connect(self.remove_file)
         btn_batch_sty = QPushButton("Edit Traces for File...")
         btn_batch_sty.clicked.connect(self.edit_traces_by_file)
 
         hb1.addWidget(btn_set_rep)
-        hb1.addWidget(btn_app_rep)
         hb1.addWidget(btn_rm_file)
         hb1.addStretch()
         hb1.addWidget(btn_batch_sty)
@@ -1111,16 +1108,27 @@ class DataManagerDialog(QDialog):
             self.file_tbl.insertRow(row)
             self.file_tbl.setItem(row, 0, QTableWidgetItem(str(i + 1)))
             self.file_tbl.setItem(row, 1, QTableWidgetItem(fname))
-            self.file_tbl.setItem(row, 2, QTableWidgetItem("Keep"))
-            self.file_tbl.setItem(row, 3, QTableWidgetItem(""))
-
+            
+            # Get file path from fdata - use 'original_path' key
+            file_path = ""
+            if isinstance(fdata, dict) and 'original_path' in fdata:
+                file_path = fdata['original_path']
+            elif isinstance(fdata, dict) and 'path' in fdata:
+                file_path = fdata['path']
+            elif isinstance(fdata, dict) and 'file_path' in fdata:
+                file_path = fdata['file_path']
+            self.file_tbl.setItem(row, 2, QTableWidgetItem(file_path))
+            
+            # Add color indicator in rightmost column
             c_item = QTableWidgetItem("")
             colors = file_colors.get(fname, set())
             if len(colors) == 1:
+                # All traces have the same color
                 c_item.setBackground(QColor(list(colors)[0]))
-            else:
+            elif len(colors) > 1:
+                # Multiple colors - show white to indicate mixed
                 c_item.setBackground(QColor("white"))
-            self.file_tbl.setItem(row, 4, c_item)
+            self.file_tbl.setItem(row, 3, c_item)
 
         self.file_tbl.setSortingEnabled(True)
 
@@ -1128,30 +1136,25 @@ class DataManagerDialog(QDialog):
         rows = self.file_tbl.selectionModel().selectedRows()
         if not rows:
             return
+        
         path, _ = QFileDialog.getOpenFileName(
-            self, "New File", "", "Data (*.csv *.dat *.xlsx);;All (*)"
+            self, "Select New File", "", "Data (*.csv *.dat *.xlsx);;All (*)"
         )
         if not path:
             return
+        
         for r in rows:
             row = r.row()
-            self.file_tbl.setItem(row, 2, QTableWidgetItem("Replace"))
-            self.file_tbl.setItem(row, 3, QTableWidgetItem(path))
-
-    def apply_replace(self):
-        count = 0
-        for r in range(self.file_tbl.rowCount()):
-            act = self.file_tbl.item(r, 2)
-            if not act or act.text() != "Replace":
-                continue
-            old = self.file_tbl.item(r, 1).text()
-            new_p = self.file_tbl.item(r, 3).text()
-            if self.mw.exchange_data(old, new_p):
-                count += 1
-        if count:
-            QMessageBox.information(self, "Success", f"Exchanged {count} files.")
-            self.refresh_files()
-            self.refresh_traces()
+            fname = self.file_tbl.item(row, 1).text()
+            
+            # Replace the file in the data map with import manager options
+            if self.mw.exchange_data(fname, path, parent=self):
+                # Update the File Path display
+                self.file_tbl.setItem(row, 2, QTableWidgetItem(path))
+        
+        QMessageBox.information(self, "Success", "File(s) replaced.")
+        self.refresh_files()
+        self.refresh_traces()
 
     def remove_file(self):
         rows = self.file_tbl.selectionModel().selectedRows()
@@ -2160,10 +2163,14 @@ class PageCanvas(QWidget):
             if t['file'] == old_f:
                 vk, xk = t['var_key'], t['x_key']
                 if vk in ds:
-                    t['raw_y'] = ds[vk].values
-                    t['raw_x'] = ds.coords['index'].values if xk == 'index' else ds[xk].values
-                    t['file'] = new_f
-                    self.update_trace(tid, t)
+                    # Update trace data and file name
+                    update_dict = {
+                        'raw_y': ds[vk].values,
+                        'raw_x': ds.coords['index'].values if xk == 'index' else ds[xk].values,
+                        'file': new_f
+                    }
+                    t.update(update_dict)
+                    self.update_trace(tid, update_dict)
                     cnt += 1
         return cnt
 
@@ -2623,15 +2630,63 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                 xd_t = ds_target.coords['index'].values
             pg.add_trace(xd_t, ds_target[var].values, var, u, fname, var, xk, xl, ax_idx)
 
-    def exchange_data(self, old, new_p):
-        suc, new_f = self.load_file_internal(new_p)
-        if not suc:
+    def exchange_data(self, old, new_p, parent=None):
+        # Import the new file using ImportManager
+        from import_manager import get_import_manager, CSVImporter, ExcelImporter, TSVImporter, CSVImportOptionsDialog
+        import_mgr = get_import_manager()
+        
+        # Get file extension
+        ext = os.path.splitext(new_p)[1].lower()
+        importer = import_mgr.importers.get(ext)
+        
+        if not importer:
+            if parent:
+                QMessageBox.critical(parent, "Error", f"No importer for {ext}")
+            else:
+                QMessageBox.critical(self, "Error", f"No importer for {ext}")
             return False
-        ds = self.file_data_map[new_f]['ds']
+        
+        # Get import options from user if available
+        options = {}
+        if importer.get_options_dialog:
+            if isinstance(importer, (CSVImporter, ExcelImporter, TSVImporter)):
+                options = CSVImportOptionsDialog.get_options(parent or self, new_p)
+            else:
+                options = importer.get_options_dialog(parent or self)
+            
+            if options is None:  # User cancelled
+                return False
+        
+        # Import the file with options
+        success, dataset, error_msg = importer.import_file(new_p, **options)
+        
+        if not success:
+            if parent:
+                QMessageBox.critical(parent, "Error", f"Failed to import file:\n{error_msg}")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to import file:\n{error_msg}")
+            return False
+        
+        # Add to file_data_map - remove old entry first
+        new_f = os.path.basename(new_p)
+        
+        # Delete the old file entry if it exists
+        if old in self.file_data_map:
+            del self.file_data_map[old]
+            idx = self.file_combo.findText(old)
+            if idx != -1:
+                self.file_combo.removeItem(idx)
+        
+        # Add new entry
+        self.file_data_map[new_f] = {'ds': dataset, 'original_path': new_p}
+        if self.file_combo.findText(new_f) == -1:
+            self.file_combo.addItem(new_f)
+        
+        # Update all traces that used the old file
         for i in range(self.tab_widget.count()):
             pg = self.tab_widget.widget(i)
             if isinstance(pg, PageCanvas):
-                pg.reload_data(old, new_f, ds)
+                pg.reload_data(old, new_f, dataset)
         return True
 
     def remove_file(self, f):
