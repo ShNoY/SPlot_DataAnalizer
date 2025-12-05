@@ -692,80 +692,7 @@ class DiagramSettingsDialog(QDialog):
         layout = QVBoxLayout()
         tabs = QTabWidget()
 
-        tab_ax = QWidget()
-        l_ax = QVBoxLayout(tab_ax)
-        grp_l = QGroupBox("Left Axis (Primary)")
-        fl = QFormLayout(grp_l)
-        self.tit = QLineEdit(ax_left.get_title())
-        self.xl = QLineEdit(ax_left.get_xlabel())
-        self.yl_l = QLineEdit(ax_left.get_ylabel())
-        is_grid_l = False
-        try:
-            is_grid_l = ax_left.xaxis.get_gridlines()[0].get_visible()
-        except Exception:
-            pass
-        self.grid_l = QCheckBox("Grid")
-        self.grid_l.setChecked(is_grid_l)
-        
-        # X-axis scale
-        self.xscale_combo = QComboBox()
-        self.xscale_combo.addItems(["Linear", "Log"])
-        self.xscale_combo.setCurrentIndex(0 if ax_left.get_xscale() == 'linear' else 1)
-        
-        # Y-axis scale (replaced checkbox with combo)
-        self.yscale_combo_l = QComboBox()
-        self.yscale_combo_l.addItems(["Linear", "Log"])
-        self.yscale_combo_l.setCurrentIndex(0 if ax_left.get_yscale() == 'linear' else 1)
-        
-        xlim = ax_left.get_xlim()
-        ylim_l = ax_left.get_ylim()
-        self.xmin = QDoubleSpinBox()
-        self.xmin.setRange(-1e12, 1e12)
-        self.xmin.setValue(xlim[0])
-        self.xmax = QDoubleSpinBox()
-        self.xmax.setRange(-1e12, 1e12)
-        self.xmax.setValue(xlim[1])
-        self.ymin_l = QDoubleSpinBox()
-        self.ymin_l.setRange(-1e12, 1e12)
-        self.ymin_l.setValue(ylim_l[0])
-        self.ymax_l = QDoubleSpinBox()
-        self.ymax_l.setRange(-1e12, 1e12)
-        self.ymax_l.setValue(ylim_l[1])
-        fl.addRow("Title:", self.tit)
-        fl.addRow("X Label:", self.xl)
-        fl.addRow("Y Label:", self.yl_l)
-        fl.addRow("X Range:", self.layout_range(self.xmin, self.xmax))
-        fl.addRow("Y Range:", self.layout_range(self.ymin_l, self.ymax_l))
-        fl.addRow("X Scale:", self.xscale_combo)
-        fl.addRow("Y Scale:", self.yscale_combo_l)
-        fl.addRow(self.grid_l)
-        l_ax.addWidget(grp_l)
-
-        if self.ax_r:
-            grp_r = QGroupBox("Right Axis (Secondary)")
-            fr = QFormLayout(grp_r)
-            self.yl_r = QLineEdit(ax_right.get_ylabel())
-            ylim_r = ax_right.get_ylim()
-            self.ymin_r = QDoubleSpinBox()
-            self.ymin_r.setRange(-1e12, 1e12)
-            self.ymin_r.setValue(ylim_r[0])
-            self.ymax_r = QDoubleSpinBox()
-            self.ymax_r.setRange(-1e12, 1e12)
-            self.ymax_r.setValue(ylim_r[1])
-            # Y-axis scale (replaced checkbox with combo)
-            self.yscale_combo_r = QComboBox()
-            self.yscale_combo_r.addItems(["Linear", "Log"])
-            self.yscale_combo_r.setCurrentIndex(0 if ax_right.get_yscale() == 'linear' else 1)
-            fr.addRow("Y Label:", self.yl_r)
-            fr.addRow("Y Range:", self.layout_range(self.ymin_r, self.ymax_r))
-            fr.addRow("Y Scale:", self.yscale_combo_r)
-            btn_rem = QPushButton("Remove Right Axis (Move Traces to Left)")
-            btn_rem.clicked.connect(self.remove_right_axis)
-            fr.addRow(btn_rem)
-            l_ax.addWidget(grp_r)
-
-        tabs.addTab(tab_ax, "Axes")
-
+        # Tab: Curves only (Axes settings removed - use Data Manager instead)
         tab_cur = QWidget()
         l_cur = QVBoxLayout(tab_cur)
         self.cur_list = QListWidget()
@@ -793,15 +720,6 @@ class DiagramSettingsDialog(QDialog):
         layout.addWidget(btns)
         self.setLayout(layout)
 
-    def layout_range(self, min_w, max_w):
-        h = QHBoxLayout()
-        h.addWidget(min_w)
-        h.addWidget(QLabel(" to "))
-        h.addWidget(max_w)
-        w = QWidget()
-        w.setLayout(h)
-        return w
-
     def edit_curve(self):
         item = self.cur_list.currentItem()
         if not item:
@@ -809,67 +727,14 @@ class DiagramSettingsDialog(QDialog):
         tid = item.data(Qt.ItemDataRole.UserRole)
         self.parent_canvas.edit_trace_by_id(tid)
 
-    def remove_right_axis(self):
-        self.parent_canvas.remove_right_axis(self.ax_l)
-        self.accept()
-
     def apply(self):
-        # Set labels with explicit font for Japanese support
-        import matplotlib.font_manager
-        font_prop = matplotlib.font_manager.FontProperties(
-            family=matplotlib.rcParams['font.sans-serif'][0])
-        
-        self.ax_l.set_title(self.tit.text(), fontproperties=font_prop)
-        self.ax_l.set_xlabel(self.xl.text(), fontproperties=font_prop)
-        self.ax_l.set_ylabel(self.yl_l.text(), fontproperties=font_prop)
-        self.ax_l.set_xlim(self.xmin.value(), self.xmax.value())
-        self.ax_l.set_ylim(self.ymin_l.value(), self.ymax_l.value())
-        self.ax_l.grid(self.grid_l.isChecked())
-        # Set X and Y scale from combo boxes
-        xscale_text = self.xscale_combo.currentText().lower()
-        yscale_text_l = self.yscale_combo_l.currentText().lower()
-        self.ax_l.set_xscale(xscale_text)
-        self.ax_l.set_yscale(yscale_text_l)
-        
-        if self.ax_r:
-            self.ax_r.set_ylabel(self.yl_r.text(), fontproperties=font_prop)
-            self.ax_r.set_ylim(self.ymin_r.value(), self.ymax_r.value())
-            yscale_text_r = self.yscale_combo_r.currentText().lower()
-            self.ax_r.set_yscale(yscale_text_r)
-        
-        # Also update stored axis label info for traces so Data Manager reflects changes
+        # Only refresh traces to ensure latest state is displayed
+        # Axes settings are now only managed via Data Manager (Dataset & Axis Settings)
         try:
             parent = self.parent_canvas
             if parent:
-                xl_text = self.xl.text()
-                yl_l_text = self.yl_l.text()
-                yl_r_text = self.yl_r.text() if self.ax_r else ""
-
-                # For each trace on this canvas, update ax_xlabel/ax_ylabel
-                for tid, t in parent.traces.items():
-                    ax_idx = t.get('ax_idx', 0)
-                    primary_ax = parent.axes[ax_idx]
-
-                    # Only update traces on this axis
-                    if primary_ax == self.ax_l:
-                        upd = {}
-                        # X label applies to primary axis
-                        if xl_text:
-                            upd['ax_xlabel'] = xl_text
-
-                        # Y label depends on trace side
-                        side = t.get('yaxis', 'left')
-                        if side == 'left' and yl_l_text:
-                            upd['ax_ylabel'] = yl_l_text
-                        elif side == 'right' and self.ax_r and yl_r_text:
-                            upd['ax_ylabel'] = yl_r_text
-
-                        if upd:
-                            parent.update_trace(tid, upd)
-                
-                # Redraw canvas to reflect changes
                 parent.canvas.draw()
-        except Exception as e:
+        except Exception:
             pass
 
         self.accept()
@@ -1832,37 +1697,20 @@ class PageCanvas(QWidget):
 
         # Handle X-axis reference change
         if 'x_key' in s:
-            print(f"[DEBUG] update_trace: x_key changed from {t['x_key']} to {s['x_key']}")
             t['x_key'] = s['x_key']
             # Reload raw_x data with new x_key
             fname = t['file']
-            print(f"[DEBUG] update_trace: fname={fname}, parent_app={self.parent_app}")
             try:
                 if self.parent_app and hasattr(self.parent_app, 'file_data_map'):
                     file_data_map = self.parent_app.file_data_map
-                    print(f"[DEBUG] update_trace: file_data_map keys={list(file_data_map.keys())}")
                     if fname in file_data_map:
                         ds = file_data_map[fname]['ds']
-                        print(f"[DEBUG] update_trace: ds data_vars={list(ds.data_vars)}")
                         if t['x_key'] == 'index':
                             if 'index' in ds.coords:
-                                old_len = len(t['raw_x'])
                                 t['raw_x'] = ds.coords['index'].values
-                                new_len = len(t['raw_x'])
-                                print(f"[DEBUG] update_trace: reloaded raw_x from index: {old_len} -> {new_len}")
                         elif t['x_key'] in ds:
-                            old_len = len(t['raw_x'])
                             t['raw_x'] = ds[t['x_key']].values
-                            new_len = len(t['raw_x'])
-                            print(f"[DEBUG] update_trace: reloaded raw_x from {t['x_key']}: {old_len} -> {new_len}")
-                        else:
-                            print(f"[DEBUG] update_trace: x_key '{t['x_key']}' not in dataset")
-                    else:
-                        print(f"[DEBUG] update_trace: fname '{fname}' not in file_data_map")
-                else:
-                    print(f"[DEBUG] update_trace: parent_app not available")
-            except Exception as e:
-                print(f"[DEBUG] update_trace: Exception: {e}")
+            except Exception:
                 # Continue anyway, use existing raw_x
                 pass
 
@@ -1885,7 +1733,17 @@ class PageCanvas(QWidget):
         t['line'].set_data(new_x, new_y)
 
         req_ax.relim()
-        req_ax.autoscale_view()
+        
+        # Only autoscale if axis limits were not explicitly set
+        # Check BOTH the update dict (s) and the trace dict (t) for preserved limits
+        has_xlim = ('ax_xmin' in s or 'ax_xmax' in s or 
+                   (t.get('ax_xmin') is not None or t.get('ax_xmax') is not None))
+        has_ylim = ('ax_ymin' in s or 'ax_ymax' in s or 
+                   (t.get('ax_ymin') is not None or t.get('ax_ymax') is not None))
+        
+        if not (has_xlim or has_ylim):
+            req_ax.autoscale_view()
+        
         self.add_legend()
         self.canvas.draw()
 
