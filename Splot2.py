@@ -3,6 +3,7 @@ import os
 import pickle
 import fnmatch
 import datetime
+from typing import Optional, Dict, Tuple, List
 import pandas as pd
 import xarray as xr
 import numpy as np
@@ -1471,6 +1472,95 @@ class DataManagerDialog(QDialog):
 
 
 # ==========================================
+# 3. Axis Information Manager
+# ==========================================
+class AxisInfo:
+    """
+    Manages information for a single matplotlib axis.
+    Centralizes axis metadata that was previously scattered across trace dicts and matplotlib objects.
+    """
+    def __init__(self, axis_idx: int, matplotlib_axis):
+        self.axis_idx = axis_idx
+        self.ax = matplotlib_axis  # Matplotlib axis object
+        
+        # Axis configuration
+        self.xlabel = ""
+        self.ylabel = ""
+        self.yscale = 'linear'
+        
+        # Axis limits
+        self.xmin: Optional[float] = None
+        self.xmax: Optional[float] = None
+        self.ymin: Optional[float] = None
+        self.ymax: Optional[float] = None
+    
+    def apply_to_matplotlib(self):
+        """Apply stored settings to matplotlib axis"""
+        if self.xlabel:
+            self.ax.set_xlabel(self.xlabel)
+        if self.ylabel:
+            self.ax.set_ylabel(self.ylabel)
+        self.ax.set_yscale(self.yscale)
+        
+        if self.xmin is not None or self.xmax is not None:
+            xmin, xmax = self.ax.get_xlim()
+            if self.xmin is not None:
+                xmin = self.xmin
+            if self.xmax is not None:
+                xmax = self.xmax
+            self.ax.set_xlim(xmin, xmax)
+        
+        if self.ymin is not None or self.ymax is not None:
+            ymin, ymax = self.ax.get_ylim()
+            if self.ymin is not None:
+                ymin = self.ymin
+            if self.ymax is not None:
+                ymax = self.ymax
+            self.ax.set_ylim(ymin, ymax)
+    
+    def get_limits(self) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        """Get all axis limits as (xmin, xmax, ymin, ymax)"""
+        return self.xmin, self.xmax, self.ymin, self.ymax
+    
+    def set_limits(self, xmin=None, xmax=None, ymin=None, ymax=None):
+        """Set axis limits"""
+        if xmin is not None:
+            self.xmin = xmin
+        if xmax is not None:
+            self.xmax = xmax
+        if ymin is not None:
+            self.ymin = ymin
+        if ymax is not None:
+            self.ymax = ymax
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for storage/serialization"""
+        return {
+            'axis_idx': self.axis_idx,
+            'xlabel': self.xlabel,
+            'ylabel': self.ylabel,
+            'yscale': self.yscale,
+            'xmin': self.xmin,
+            'xmax': self.xmax,
+            'ymin': self.ymin,
+            'ymax': self.ymax
+        }
+    
+    @staticmethod
+    def from_dict(data: Dict, matplotlib_axis) -> 'AxisInfo':
+        """Create AxisInfo from dictionary"""
+        info = AxisInfo(data['axis_idx'], matplotlib_axis)
+        info.xlabel = data.get('xlabel', '')
+        info.ylabel = data.get('ylabel', '')
+        info.yscale = data.get('yscale', 'linear')
+        info.xmin = data.get('xmin')
+        info.xmax = data.get('xmax')
+        info.ymin = data.get('ymin')
+        info.ymax = data.get('ymax')
+        return info
+
+
+# ==========================================
 # 3. Canvas & Mini Plot
 # ==========================================
 class MiniPlotCanvas(FigureCanvas):
@@ -1530,6 +1620,7 @@ class PageCanvas(QWidget):
 
         # Axis creation
         self.axes = []
+        self.axis_info = {}  # axis_idx -> AxisInfo
         self.twins = {}  # primary_ax -> twin_ax
         self._updating_xlim = False
         self.selected_line = None
@@ -1540,6 +1631,8 @@ class PageCanvas(QWidget):
             ax.grid(True)
             ax.callbacks.connect('xlim_changed', lambda evt, idx=i: self.on_xlim_changed(idx, evt))
             self.axes.append(ax)
+            # Create AxisInfo for each axis
+            self.axis_info[i] = AxisInfo(i, ax)
 
         # Context menu & events
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -2037,36 +2130,49 @@ class PageCanvas(QWidget):
 
         if 'ax_xlabel' in s:
             primary.set_xlabel(s['ax_xlabel'])
-            # Store in trace for Data Manager
+            # Store in AxisInfo and trace
+            self.axis_info[ax_idx].xlabel = s['ax_xlabel']
             t['ax_xlabel'] = s['ax_xlabel']
         if 'ax_ylabel' in s:
             req_ax.set_ylabel(s['ax_ylabel'])
-            # Store in trace for Data Manager
+            # Store in AxisInfo and trace
+            self.axis_info[ax_idx].ylabel = s['ax_ylabel']
             t['ax_ylabel'] = s['ax_ylabel']
         if 'yscale' in s:
             req_ax.set_yscale(s['yscale'])
+            # Store in AxisInfo
+            self.axis_info[ax_idx].yscale = s['yscale']
         
-        # Handle axis limits
+        # Handle axis limits with AxisInfo
+        limits_updated = False
         if 'ax_xmin' in s and s['ax_xmin'] is not None:
             xmin = s['ax_xmin']
             xmax = primary.get_xlim()[1]
             primary.set_xlim(xmin, xmax)
+            self.axis_info[ax_idx].xmin = s['ax_xmin']
             t['ax_xmin'] = s['ax_xmin']
+            limits_updated = True
         if 'ax_xmax' in s and s['ax_xmax'] is not None:
             xmin = primary.get_xlim()[0]
             xmax = s['ax_xmax']
             primary.set_xlim(xmin, xmax)
+            self.axis_info[ax_idx].xmax = s['ax_xmax']
             t['ax_xmax'] = s['ax_xmax']
+            limits_updated = True
         if 'ax_ymin' in s and s['ax_ymin'] is not None:
             ymin = s['ax_ymin']
             ymax = req_ax.get_ylim()[1]
             req_ax.set_ylim(ymin, ymax)
+            self.axis_info[ax_idx].ymin = s['ax_ymin']
             t['ax_ymin'] = s['ax_ymin']
+            limits_updated = True
         if 'ax_ymax' in s and s['ax_ymax'] is not None:
             ymin = req_ax.get_ylim()[0]
             ymax = s['ax_ymax']
             req_ax.set_ylim(ymin, ymax)
+            self.axis_info[ax_idx].ymax = s['ax_ymax']
             t['ax_ymax'] = s['ax_ymax']
+            limits_updated = True
 
         # Handle X-axis reference change
         if 'x_key' in s:
@@ -2126,6 +2232,24 @@ class PageCanvas(QWidget):
             del self.traces[tid]
             self.add_legend()
             self.canvas.draw()
+
+    def get_axis_info(self, ax_idx: int) -> Optional[AxisInfo]:
+        """Get AxisInfo for a specific axis"""
+        return self.axis_info.get(ax_idx)
+    
+    def get_axis_info_dict(self, ax_idx: int) -> Dict:
+        """Get axis info as dictionary for serialization"""
+        info = self.axis_info.get(ax_idx)
+        if info:
+            return info.to_dict()
+        return {}
+    
+    def restore_axis_info(self, ax_idx: int, info_dict: Dict):
+        """Restore axis info from dictionary"""
+        if ax_idx in self.axis_info:
+            restored = AxisInfo.from_dict(info_dict, self.axes[ax_idx])
+            self.axis_info[ax_idx] = restored
+            restored.apply_to_matplotlib()
 
     def refresh_trace_data(self, tid, file_map):
         if tid in self.traces:
