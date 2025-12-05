@@ -307,7 +307,7 @@ class LegendSettingsDialog(QDialog):
         layout = QFormLayout()
 
         self.content_combo = QComboBox()
-        self.content_combo.addItems(["Both (Label @ File)", "Label Name Only", "File Name Only", "None (Hide Legend)"])
+        self.content_combo.addItems(["Both (Label @ File)", "Data Name Only", "File Name Only", "None (Hide Legend)"])
         mode = current_cfg.get('content', 'both')
         idx = 0
         if mode == 'label':
