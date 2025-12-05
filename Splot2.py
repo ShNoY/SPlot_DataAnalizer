@@ -335,6 +335,31 @@ class LegendSettingsDialog(QDialog):
 
         layout.addRow("Content:", self.content_combo)
         layout.addRow("Position:", self.pos_combo)
+        
+        # Font Settings for Legend
+        import matplotlib.font_manager as fm
+        available_fonts = sorted(set([f.name for f in fm.fontManager.ttflist]))
+        
+        self.font_combo = QComboBox()
+        self.font_combo.setEditable(True)  # Enable search/filtering
+        self.font_combo.addItems(available_fonts)
+        
+        legend_font = current_cfg.get('font_name', 'Arial')
+        font_idx = self.font_combo.findText(legend_font)
+        if font_idx >= 0:
+            self.font_combo.setCurrentIndex(font_idx)
+        else:
+            # If font not found, add it and select it
+            self.font_combo.addItem(legend_font)
+            self.font_combo.setCurrentIndex(self.font_combo.count() - 1)
+        
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setMinimum(6)
+        self.font_size_spin.setMaximum(72)
+        self.font_size_spin.setValue(current_cfg.get('font_size', 10))
+        
+        layout.addRow("Font Name:", self.font_combo)
+        layout.addRow("Font Size:", self.font_size_spin)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(self.accept)
@@ -361,7 +386,12 @@ class LegendSettingsDialog(QDialog):
             5: 'outside right',
             6: 'manual'
         }
-        return {'content': content, 'loc': inv_map[p_idx]}
+        return {
+            'content': content,
+            'loc': inv_map[p_idx],
+            'font_name': self.font_combo.currentText(),
+            'font_size': self.font_size_spin.value()
+        }
 
 class NewPageDialog(QDialog):
     def __init__(self, parent=None):
@@ -1688,7 +1718,12 @@ class LegendManager:
     """Manages legend configuration and rendering"""
     
     def __init__(self, num_axes):
-        self.configs = {i: {'content': 'both', 'loc': 'best'} for i in range(num_axes)}
+        self.configs = {i: {
+            'content': 'both',
+            'loc': 'best',
+            'font_name': 'Arial',
+            'font_size': 10
+        } for i in range(num_axes)}
     
     def set_config(self, ax_idx, config):
         """Update legend config for an axis"""
@@ -1757,7 +1792,16 @@ class LegendManager:
                 kw['loc'] = loc
             
             labs = [l.get_label() for l in lines]
-            ax.legend(lines, labs, **kw)
+            legend = ax.legend(lines, labs, **kw)
+            
+            # Apply font settings to legend
+            if legend:
+                import matplotlib.font_manager
+                font_name = cfg.get('font_name', 'Arial')
+                font_size = cfg.get('font_size', 10)
+                font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+                for text in legend.get_texts():
+                    text.set_fontproperties(font_prop)
 
 
 # ==========================================
@@ -2151,6 +2195,19 @@ class PageCanvas(QWidget):
         ylim_target = target_ax.get_ylim()
         t['ax_ymin'] = ylim_target[0]
         t['ax_ymax'] = ylim_target[1]
+        
+        # Update axis visibility settings from current graph state
+        # X-axis label visibility
+        t['show_xlabel'] = ax.xaxis.label.get_visible()
+        
+        # Y-axis label visibility
+        t['show_ylabel'] = target_ax.yaxis.label.get_visible()
+        
+        # X-axis scale (ticks and tick labels) visibility
+        t['show_xticks'] = ax.xaxis.get_visible()
+        
+        # Y-axis scale (ticks and tick labels) visibility
+        t['show_yticks'] = target_ax.yaxis.get_visible()
         
         dlg = TraceSettingsDialog(t, self, available_vars=available_vars)
         if dlg.exec():
