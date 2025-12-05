@@ -765,6 +765,41 @@ class TraceAxisTab(QWidget):
         fax.addRow("", h_auto)
         
         layout.addWidget(grp_ax)
+        
+        # Visibility Settings
+        grp_vis = QGroupBox("Axis Display")
+        fvis = QFormLayout(grp_vis)
+        
+        # X-axis label visibility
+        is_uniform_xlab_vis, uniform_xlab_vis = self._check_values_uniform('show_xlabel')
+        self.show_xlabel_cb = QCheckBox("Show X Label")
+        self.show_xlabel_cb.setChecked(uniform_xlab_vis if is_uniform_xlab_vis else True)
+        self.show_xlabel_cb.stateChanged.connect(lambda: self._mark_modified('show_xlabel'))
+        
+        # Y-axis label visibility
+        is_uniform_ylab_vis, uniform_ylab_vis = self._check_values_uniform('show_ylabel')
+        self.show_ylabel_cb = QCheckBox("Show Y Label")
+        self.show_ylabel_cb.setChecked(uniform_ylab_vis if is_uniform_ylab_vis else True)
+        self.show_ylabel_cb.stateChanged.connect(lambda: self._mark_modified('show_ylabel'))
+        
+        # X-axis scale numbers visibility
+        is_uniform_xticks_vis, uniform_xticks_vis = self._check_values_uniform('show_xticks')
+        self.show_xticks_cb = QCheckBox("Show X Scale")
+        self.show_xticks_cb.setChecked(uniform_xticks_vis if is_uniform_xticks_vis else True)
+        self.show_xticks_cb.stateChanged.connect(lambda: self._mark_modified('show_xticks'))
+        
+        # Y-axis scale numbers visibility
+        is_uniform_yticks_vis, uniform_yticks_vis = self._check_values_uniform('show_yticks')
+        self.show_yticks_cb = QCheckBox("Show Y Scale")
+        self.show_yticks_cb.setChecked(uniform_yticks_vis if is_uniform_yticks_vis else True)
+        self.show_yticks_cb.stateChanged.connect(lambda: self._mark_modified('show_yticks'))
+        
+        fvis.addRow(self.show_xlabel_cb)
+        fvis.addRow(self.show_ylabel_cb)
+        fvis.addRow(self.show_xticks_cb)
+        fvis.addRow(self.show_yticks_cb)
+        
+        layout.addWidget(grp_vis)
         layout.addStretch()
     
     def _mark_modified(self, field):
@@ -856,6 +891,16 @@ class TraceAxisTab(QWidget):
             xkey_text = self.xkey_combo.currentText()
             if xkey_text != "Keep (Current)":
                 data['x_key'] = xkey_text
+        
+        # Add visibility settings
+        if 'show_xlabel' in self.modified_fields:
+            data['show_xlabel'] = self.show_xlabel_cb.isChecked()
+        if 'show_ylabel' in self.modified_fields:
+            data['show_ylabel'] = self.show_ylabel_cb.isChecked()
+        if 'show_xticks' in self.modified_fields:
+            data['show_xticks'] = self.show_xticks_cb.isChecked()
+        if 'show_yticks' in self.modified_fields:
+            data['show_yticks'] = self.show_yticks_cb.isChecked()
         
         return data
 
@@ -2165,7 +2210,11 @@ class PageCanvas(QWidget):
             'markersize': 2.0,
             'marker_face_color': '#1f77b4',
             'marker_edge_color': '#1f77b4',
-            'linestyle': '-'
+            'linestyle': '-',
+            'show_xlabel': style.get('show_xlabel', True),
+            'show_ylabel': style.get('show_ylabel', True),
+            'show_xticks': style.get('show_xticks', True),
+            'show_yticks': style.get('show_yticks', True)
         }
 
         if any([xf != 1, xo != 0, yf != 1, yo != 0, trans != 'None']):
@@ -2259,6 +2308,24 @@ class PageCanvas(QWidget):
             self.axis_info[ax_idx].ymax = s['ax_ymax']
             t['ax_ymax'] = s['ax_ymax']
             limits_updated = True
+
+        # Handle axis label and scale visibility
+        if 'show_xlabel' in s:
+            show = s['show_xlabel']
+            primary.xaxis.label.set_visible(show)
+            t['show_xlabel'] = show
+        if 'show_ylabel' in s:
+            show = s['show_ylabel']
+            req_ax.yaxis.label.set_visible(show)
+            t['show_ylabel'] = show
+        if 'show_xticks' in s:
+            show = s['show_xticks']
+            primary.xaxis.set_visible(show)
+            t['show_xticks'] = show
+        if 'show_yticks' in s:
+            show = s['show_yticks']
+            req_ax.yaxis.set_visible(show)
+            t['show_yticks'] = show
 
         # Handle X-axis reference change
         if 'x_key' in s:
