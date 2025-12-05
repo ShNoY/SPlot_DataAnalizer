@@ -33,6 +33,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QUrl
 from PyQt6.QtGui import QAction, QColor, QKeySequence, QDoubleValidator, QDesktopServices, QIcon
 
+# Import Manager
+from import_manager import get_import_manager
+
 # ==========================================
 # 0. Undo Manager
 # ==========================================
@@ -1871,7 +1874,22 @@ class SPlotApp(QMainWindow):
 
         tb = QToolBar("Main")
         tb.addAction("New Page", self.add_page_dialog).setShortcut(QKeySequence("Ctrl+N"))
-        tb.addAction("Import", self.import_data).setShortcut(QKeySequence("Ctrl+I"))
+        
+        # Import button with dropdown menu for different formats
+        import_action = tb.addAction("Import")
+        import_action.setShortcut(QKeySequence("Ctrl+I"))
+        import_menu = QMenu(self)
+        
+        import_mgr = get_import_manager()
+        for ext in import_mgr.get_supported_extensions():
+            importer = import_mgr.importers[ext]
+            action = import_menu.addAction(importer.description)
+            action.triggered.connect(lambda checked=False, e=ext: self.import_data_by_format(e))
+        
+        import_menu.addSeparator()
+        import_menu.addAction("Auto Detect (All Formats)", self.import_data)
+        import_action.triggered.connect(lambda: import_menu.exec(self.mapToGlobal(tb.geometry().bottomLeft())))
+        
         tb.addAction("Data Mgr", self.open_data_manager).setShortcut(QKeySequence("Ctrl+D"))
         tb.addSeparator()
         tb.addAction("Undo", self.undo_mgr.undo).setShortcut(QKeySequence("Ctrl+Z"))
@@ -2160,44 +2178,67 @@ class SPlotApp(QMainWindow):
             QMessageBox.warning(self, "Help", "No PDF help file found in application folder.")
 
     def import_data(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Import", "", "Data (*.csv *.dat *.xlsx);;All (*)")
+        """Import data using ImportManager with auto-format detection"""
+        import_mgr = get_import_manager()
+        file_filter = import_mgr.get_file_filter()
+        
+        p, _ = QFileDialog.getOpenFileName(self, "Import Data", "", file_filter)
         if not p:
             return
+        
         self.undo_mgr.push("Import Data")
-        self.load_file_internal(p)
+        
+        # Use ImportManager to handle import
+        success, dataset, error_msg = import_mgr.import_file(p, parent=self)
+        
+        if not success:
+            QMessageBox.critical(self, "Import Error", f"Failed to import file:\n{error_msg}")
+            return
+        
+        # Add imported dataset to file_data_map
+        self.load_dataset_internal(p, dataset)
 
-    def load_file_internal(self, p):
+    def import_data_by_format(self, ext):
+        """Import data with specific format selection"""
+        import_mgr = get_import_manager()
+        importer = import_mgr.importers.get(ext)
+        
+        if not importer:
+            QMessageBox.critical(self, "Error", f"No importer for {ext}")
+            return
+        
+        # Show file dialog for this format only
+        file_filter = f"{importer.description} (*{ext});;All Files (*)"
+        p, _ = QFileDialog.getOpenFileName(self, f"Import {importer.description}", "", file_filter)
+        
+        if not p:
+            return
+        
+        self.undo_mgr.push(f"Import {importer.description}")
+        
+        # Get options if available
+        options = {}
+        if importer.get_options_dialog:
+            options = importer.get_options_dialog(self)
+            if options is None:  # User cancelled
+                return
+        
+        # Import with specific format
+        success, dataset, error_msg = importer.import_file(p, **options)
+        
+        if not success:
+            QMessageBox.critical(self, "Import Error", f"Failed to import file:\n{error_msg}")
+            return
+        
+        # Add imported dataset to file_data_map
+        self.load_dataset_internal(p, dataset)
+
+    def load_dataset_internal(self, p, ds):
+        """
+        Load a pre-parsed xarray Dataset from file.
+        Used by ImportManager and load_file_internal.
+        """
         f = os.path.basename(p)
-        ext = os.path.splitext(f)[1].lower()
-        encs = ['utf-8', 'cp932', 'shift_jis', 'latin-1']
-        df = None
-        for e in encs:
-            try:
-                if ext == '.xlsx':
-                    df = pd.read_excel(p, header=[0, 1])
-                    break
-                else:
-                    df = pd.read_csv(p, header=[0, 1], encoding=e, low_memory=False)
-                    break
-            except Exception:
-                continue
-        if df is None:
-            QMessageBox.critical(self, "Err", "Load failed.")
-            return False, None
-
-        ds = xr.Dataset()
-        is_multi = isinstance(df.columns, pd.MultiIndex)
-        for c in df.columns:
-            if is_multi:
-                l, u = (str(c[0]), str(c[1]))
-            else:
-                l, u = (str(c), "")
-            if "Unnamed" in u:
-                u = ""
-            da = xr.DataArray(pd.to_numeric(df[c], errors='coerce'), coords={'index': df.index}, dims='index')
-            da.attrs['unit'] = u
-            ds[l] = da
-
         self.file_data_map[f] = {'ds': ds, 'original_path': p}
         if self.file_combo.findText(f) == -1:
             self.file_combo.addItem(f)
