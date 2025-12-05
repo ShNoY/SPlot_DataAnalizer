@@ -2737,7 +2737,7 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                     "traces": traces_cfg,
                     "link_ids": pg.axis_link_ids,
                     "title": self.tab_widget.tabText(i),
-                    "legend_cfgs": pg.legend_cfgs,
+                    "legend_cfgs": pg.legend_mgr.configs,  # Use legend_mgr.configs directly to ensure all fields are saved
                     "trace_cnt": pg.trace_cnt
                 })
         return {"files": self.file_data_map.copy(), "pages": pages_data, "cur": self.tab_widget.currentIndex()}
@@ -2757,7 +2757,17 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             pg.xlink_mgr.axis_link_ids = pd_['link_ids']
             pg._rebuild_xlink_groups()
             
-            pg.legend_cfgs = pd_['legend_cfgs']
+            # Restore legend configs with font info migration
+            legend_cfgs = pd_['legend_cfgs']
+            # Ensure all legend configs have font settings (for backward compatibility)
+            for ax_idx in legend_cfgs:
+                if isinstance(legend_cfgs[ax_idx], dict):
+                    if 'font_name' not in legend_cfgs[ax_idx]:
+                        legend_cfgs[ax_idx]['font_name'] = 'Arial'
+                    if 'font_size' not in legend_cfgs[ax_idx]:
+                        legend_cfgs[ax_idx]['font_size'] = 10
+            pg.legend_cfgs = legend_cfgs
+            pg.legend_mgr.configs = legend_cfgs  # Sync to LegendManager
             pg.trace_cnt = pd_['trace_cnt']
             pg.traces = {}
             
@@ -2812,8 +2822,28 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
 
                 if t_cfg.get('ax_xlabel'):
                     ax.set_xlabel(t_cfg['ax_xlabel'])
+                    # Reapply font settings to X-axis after setting label
+                    if 'axes_info' in pd_ and ax_idx in pd_['axes_info']:
+                        ax_info = pd_['axes_info'][ax_idx]
+                        import matplotlib.font_manager
+                        font_name = ax_info.get('font_name', 'Arial')
+                        font_size = ax_info.get('font_size', 10)
+                        font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+                        ax.xaxis.label.set_fontproperties(font_prop)
+                        for label in ax.get_xticklabels():
+                            label.set_fontproperties(font_prop)
                 if t_cfg.get('ax_ylabel'):
                     target_ax.set_ylabel(t_cfg['ax_ylabel'])
+                    # Apply font settings to Y-axis after setting label
+                    if 'axes_info' in pd_ and ax_idx in pd_['axes_info']:
+                        ax_info = pd_['axes_info'][ax_idx]
+                        import matplotlib.font_manager
+                        font_name = ax_info.get('font_name', 'Arial')
+                        font_size = ax_info.get('font_size', 10)
+                        font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+                        target_ax.yaxis.label.set_fontproperties(font_prop)
+                        for label in target_ax.get_yticklabels():
+                            label.set_fontproperties(font_prop)
                 if t_cfg.get('yscale'):
                     target_ax.set_yscale(t_cfg['yscale'])
 
