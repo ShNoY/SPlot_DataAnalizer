@@ -614,18 +614,6 @@ class TraceSettingsDialog(QDialog):
         else:
             self.ax_xmax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
         
-        # X-axis range layout with autoscale button
-        hbox_xrange = QHBoxLayout()
-        hbox_xrange.addWidget(self.ax_xmin)
-        hbox_xrange.addWidget(QLabel(" to "))
-        hbox_xrange.addWidget(self.ax_xmax)
-        btn_xauto = QPushButton("Auto")
-        btn_xauto.setMaximumWidth(60)
-        btn_xauto.clicked.connect(self._autoscale_x)
-        hbox_xrange.addWidget(btn_xauto)
-        xrange_widget = QWidget()
-        xrange_widget.setLayout(hbox_xrange)
-        
         self.ax_ymin = QLineEdit()
         self.ax_ymin.textChanged.connect(lambda: self.mark_modified('ax_ymin'))
         is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
@@ -644,25 +632,40 @@ class TraceSettingsDialog(QDialog):
         else:
             self.ax_ymax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
         
-        # Y-axis range layout with autoscale button
-        hbox_yrange = QHBoxLayout()
-        hbox_yrange.addWidget(self.ax_ymin)
-        hbox_yrange.addWidget(QLabel(" to "))
-        hbox_yrange.addWidget(self.ax_ymax)
-        btn_yauto = QPushButton("Auto")
-        btn_yauto.setMaximumWidth(60)
-        btn_yauto.clicked.connect(self._autoscale_y)
-        hbox_yrange.addWidget(btn_yauto)
-        yrange_widget = QWidget()
-        yrange_widget.setLayout(hbox_yrange)
-        
         val = QDoubleValidator()
         self.ax_xmin.setValidator(val)
         self.ax_xmax.setValidator(val)
         self.ax_ymin.setValidator(val)
         self.ax_ymax.setValidator(val)
-        fax.addRow("X Range:", xrange_widget)
-        fax.addRow("Y Range:", yrange_widget)
+        
+        # X-axis row with autoscale button
+        h_x_min = QHBoxLayout()
+        h_x_min.addWidget(self.ax_xmin)
+        fax.addRow("X Min:", h_x_min)
+        
+        h_x_max = QHBoxLayout()
+        h_x_max.addWidget(self.ax_xmax)
+        fax.addRow("X Max:", h_x_max)
+        
+        # Y-axis row with autoscale button
+        h_y_min = QHBoxLayout()
+        h_y_min.addWidget(self.ax_ymin)
+        fax.addRow("Y Min:", h_y_min)
+        
+        h_y_max = QHBoxLayout()
+        h_y_max.addWidget(self.ax_ymax)
+        fax.addRow("Y Max:", h_y_max)
+        
+        # Autoscale buttons
+        h_auto = QHBoxLayout()
+        btn_auto_x = QPushButton("Autoscale X")
+        btn_auto_x.clicked.connect(self._autoscale_x)
+        btn_auto_y = QPushButton("Autoscale Y")
+        btn_auto_y.clicked.connect(self._autoscale_y)
+        h_auto.addWidget(btn_auto_x)
+        h_auto.addWidget(btn_auto_y)
+        fax.addRow("", h_auto)
+        
         l_axis.addWidget(grp_ax)
         tabs.addTab(tab_axis, "Axis")
 
@@ -675,20 +678,6 @@ class TraceSettingsDialog(QDialog):
 
     def mark_modified(self, field):
         self.modified_fields.add(field)
-
-    def _autoscale_x(self):
-        """Clear X min and max to enable autoscaling"""
-        self.ax_xmin.clear()
-        self.ax_xmax.clear()
-        self.mark_modified('ax_xmin')
-        self.mark_modified('ax_xmax')
-
-    def _autoscale_y(self):
-        """Clear Y min and max to enable autoscaling"""
-        self.ax_ymin.clear()
-        self.ax_ymax.clear()
-        self.mark_modified('ax_ymin')
-        self.mark_modified('ax_ymax')
 
     def _check_values_uniform(self, field_name):
         """Check if a field has the same value across all selected traces.
@@ -728,6 +717,110 @@ class TraceSettingsDialog(QDialog):
             self.marker_edge_color = c.name()
             self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
             self.mark_modified('marker_edge_color')
+
+    def _round_nice(self, value, round_down=False):
+        """Round value to a nice number for axis limits.
+        
+        Nice numbers are: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10
+        This handles the normalized value (0-10 range).
+        """
+        import math
+        if value == 0:
+            return 0
+        
+        sign = -1 if value < 0 else 1
+        abs_val = abs(value)
+        
+        # Get order of magnitude
+        order = math.floor(math.log10(abs_val))
+        normalized = abs_val / (10 ** order)
+        
+        # Nice numbers in order
+        nice_numbers = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+        
+        if round_down:
+            # Find the largest nice number <= normalized
+            selected = nice_numbers[0]
+            for nice in nice_numbers:
+                if nice <= normalized:
+                    selected = nice
+                else:
+                    break
+        else:
+            # Find the smallest nice number >= normalized
+            selected = nice_numbers[-1]
+            for nice in nice_numbers:
+                if nice >= normalized:
+                    selected = nice
+                    break
+        
+        return sign * selected * (10 ** order)
+
+    def _calculate_autoscale_limits(self, axis_dir='x'):
+        """Calculate nice axis limits based on current trace data.
+        axis_dir: 'x' or 'y'
+        Returns: (min_limit, max_limit) or None if no valid data
+        """
+        import numpy as np
+        
+        # Collect all data from selected traces
+        all_values = []
+        
+        for trace in self.traces:
+            if 'line' not in trace:
+                continue
+            
+            line = trace['line']
+            if axis_dir == 'x':
+                data = line.get_xdata()
+                factor = trace.get('x_factor', 1.0)
+                offset = trace.get('x_offset', 0.0)
+            else:  # 'y'
+                data = line.get_ydata()
+                factor = trace.get('y_factor', 1.0)
+                offset = trace.get('y_offset', 0.0)
+            
+            # Apply factor and offset
+            transformed = data * factor + offset
+            
+            # Filter out NaN and inf values
+            valid = transformed[np.isfinite(transformed)]
+            if len(valid) > 0:
+                all_values.extend(valid)
+        
+        if not all_values:
+            return None
+        
+        min_val = float(np.min(all_values))
+        max_val = float(np.max(all_values))
+        
+        # Add 5% margin
+        margin = (max_val - min_val) * 0.05
+        if margin == 0:
+            margin = abs(min_val) * 0.1 if min_val != 0 else 1.0
+        
+        nice_min = self._round_nice(min_val - margin, round_down=True)
+        nice_max = self._round_nice(max_val + margin, round_down=False)
+        
+        return (nice_min, nice_max)
+
+    def _autoscale_x(self):
+        """Set X-axis limits to autoscale values."""
+        limits = self._calculate_autoscale_limits('x')
+        if limits:
+            self.ax_xmin.setText(str(limits[0]))
+            self.ax_xmax.setText(str(limits[1]))
+            self.mark_modified('ax_xmin')
+            self.mark_modified('ax_xmax')
+
+    def _autoscale_y(self):
+        """Set Y-axis limits to autoscale values."""
+        limits = self._calculate_autoscale_limits('y')
+        if limits:
+            self.ax_ymin.setText(str(limits[0]))
+            self.ax_ymax.setText(str(limits[1]))
+            self.mark_modified('ax_ymin')
+            self.mark_modified('ax_ymax')
 
     def get_data(self):
         data = {}
