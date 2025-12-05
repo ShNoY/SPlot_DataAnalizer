@@ -351,7 +351,17 @@ class TraceSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Dataset & Axis Settings")
         self.resize(450, 650)
-        self.t = trace_info
+        
+        # Handle both single trace dict and list of trace dicts
+        if isinstance(trace_info, list):
+            self.traces = trace_info
+            self.t = trace_info[0]  # Use first trace as reference
+            self.is_multi = len(trace_info) > 1
+        else:
+            self.traces = [trace_info]
+            self.t = trace_info
+            self.is_multi = False
+        
         self.modified_fields = set()
         self.available_vars = available_vars if available_vars else []
         layout = QVBoxLayout()
@@ -508,24 +518,28 @@ class TraceSettingsDialog(QDialog):
         grp_xref = QGroupBox("X-Axis Reference")
         fxref = QFormLayout(grp_xref)
         self.xkey_combo = QComboBox()
-        self.xkey_combo.addItem("Keep (Current)")
-        if self.available_vars:
-            for var in self.available_vars:
-                self.xkey_combo.addItem(var)
+        
+        # Check if x_key is uniform across selected traces
+        is_uniform, uniform_val = self._check_values_uniform('x_key')
+        
+        if is_uniform and uniform_val:
+            # All traces have the same x_key
+            self.xkey_combo.addItem(uniform_val)
+            if self.available_vars:
+                for var in self.available_vars:
+                    if var != uniform_val:
+                        self.xkey_combo.addItem(var)
+            self.xkey_combo.setCurrentIndex(0)
+        else:
+            # Values differ or not set - show "Keep (Current)" option
+            self.xkey_combo.addItem("Keep (Current)")
+            if self.available_vars:
+                for var in self.available_vars:
+                    self.xkey_combo.addItem(var)
+            self.xkey_combo.setCurrentIndex(0)
         
         # Connect signal first to capture user changes only
         self.xkey_combo.currentIndexChanged.connect(self._on_xkey_changed)
-        
-        # Then set initial value with signals blocked
-        self.xkey_combo.blockSignals(True)
-        curr_xkey = self.t.get('x_key', 'index')
-        if curr_xkey == 'index':
-            self.xkey_combo.setCurrentIndex(0)
-        else:
-            idx = self.xkey_combo.findText(curr_xkey)
-            if idx >= 0:
-                self.xkey_combo.setCurrentIndex(idx)
-        self.xkey_combo.blockSignals(False)
         
         fxref.addRow("X Data Source:", self.xkey_combo)
         l_axis.addWidget(grp_xref)
@@ -533,11 +547,27 @@ class TraceSettingsDialog(QDialog):
         grp_lbl = QGroupBox("Axis Labels")
         flb = QFormLayout(grp_lbl)
         self.ax_xlab = QLineEdit()
-        self.ax_xlab.setPlaceholderText("Keep (X Label)")
         self.ax_xlab.textChanged.connect(lambda: self.mark_modified('ax_xlabel'))
+        
+        # Check if ax_xlabel is uniform
+        is_uniform_xlabel, uniform_xlabel = self._check_values_uniform('ax_xlabel')
+        if is_uniform_xlabel and uniform_xlabel:
+            self.ax_xlab.setText(uniform_xlabel)
+            self.ax_xlab.setPlaceholderText("Current X Label")
+        else:
+            self.ax_xlab.setPlaceholderText("Keep (Multiple different values)")
+        
         self.ax_ylab = QLineEdit()
-        self.ax_ylab.setPlaceholderText("Keep (Y Label)")
         self.ax_ylab.textChanged.connect(lambda: self.mark_modified('ax_ylabel'))
+        
+        # Check if ax_ylabel is uniform
+        is_uniform_ylabel, uniform_ylabel = self._check_values_uniform('ax_ylabel')
+        if is_uniform_ylabel and uniform_ylabel:
+            self.ax_ylab.setText(uniform_ylabel)
+            self.ax_ylab.setPlaceholderText("Current Y Label")
+        else:
+            self.ax_ylab.setPlaceholderText("Keep (Multiple different values)")
+        
         flb.addRow("X Label:", self.ax_xlab)
         flb.addRow("Y Label:", self.ax_ylab)
         l_axis.addWidget(grp_lbl)
@@ -545,36 +575,94 @@ class TraceSettingsDialog(QDialog):
         grp_scl = QGroupBox("Axis Scale")
         fsc2 = QFormLayout(grp_scl)
         self.yscale_combo = QComboBox()
-        self.yscale_combo.addItems(["Linear", "Log"])
-        sc_curr = self.t.get('yscale', 'linear')
-        self.yscale_combo.setCurrentIndex(0 if sc_curr == 'linear' else 1)
+        
+        # Check if yscale is uniform
+        is_uniform_yscale, uniform_yscale = self._check_values_uniform('yscale')
+        
+        if is_uniform_yscale:
+            # All traces have the same yscale
+            sc_curr = uniform_yscale if uniform_yscale else 'linear'
+            self.yscale_combo.addItems(["Linear", "Log"])
+            self.yscale_combo.setCurrentIndex(0 if sc_curr == 'linear' else 1)
+        else:
+            # Values differ - add "Keep (Current)" option
+            self.yscale_combo.addItems(["Keep (Current)", "Linear", "Log"])
+            self.yscale_combo.setCurrentIndex(0)
+        
         self.yscale_combo.currentIndexChanged.connect(lambda: self.mark_modified('yscale'))
         fsc2.addRow("Y Scale:", self.yscale_combo)
         l_axis.addWidget(grp_scl)
 
         grp_ax = QGroupBox("Axis Limits")
         fax = QFormLayout(grp_ax)
+        
         self.ax_xmin = QLineEdit()
-        self.ax_xmin.setPlaceholderText("Keep")
         self.ax_xmin.textChanged.connect(lambda: self.mark_modified('ax_xmin'))
+        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
+        if is_uniform_xmin and uniform_xmin is not None:
+            self.ax_xmin.setText(str(uniform_xmin))
+            self.ax_xmin.setPlaceholderText("Current X Min")
+        else:
+            self.ax_xmin.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
+        
         self.ax_xmax = QLineEdit()
-        self.ax_xmax.setPlaceholderText("Keep")
         self.ax_xmax.textChanged.connect(lambda: self.mark_modified('ax_xmax'))
+        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
+        if is_uniform_xmax and uniform_xmax is not None:
+            self.ax_xmax.setText(str(uniform_xmax))
+            self.ax_xmax.setPlaceholderText("Current X Max")
+        else:
+            self.ax_xmax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
+        
+        # X-axis range layout with autoscale button
+        hbox_xrange = QHBoxLayout()
+        hbox_xrange.addWidget(self.ax_xmin)
+        hbox_xrange.addWidget(QLabel(" to "))
+        hbox_xrange.addWidget(self.ax_xmax)
+        btn_xauto = QPushButton("Auto")
+        btn_xauto.setMaximumWidth(60)
+        btn_xauto.clicked.connect(self._autoscale_x)
+        hbox_xrange.addWidget(btn_xauto)
+        xrange_widget = QWidget()
+        xrange_widget.setLayout(hbox_xrange)
+        
         self.ax_ymin = QLineEdit()
-        self.ax_ymin.setPlaceholderText("Keep")
         self.ax_ymin.textChanged.connect(lambda: self.mark_modified('ax_ymin'))
+        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
+        if is_uniform_ymin and uniform_ymin is not None:
+            self.ax_ymin.setText(str(uniform_ymin))
+            self.ax_ymin.setPlaceholderText("Current Y Min")
+        else:
+            self.ax_ymin.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
+        
         self.ax_ymax = QLineEdit()
-        self.ax_ymax.setPlaceholderText("Keep")
         self.ax_ymax.textChanged.connect(lambda: self.mark_modified('ax_ymax'))
+        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
+        if is_uniform_ymax and uniform_ymax is not None:
+            self.ax_ymax.setText(str(uniform_ymax))
+            self.ax_ymax.setPlaceholderText("Current Y Max")
+        else:
+            self.ax_ymax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
+        
+        # Y-axis range layout with autoscale button
+        hbox_yrange = QHBoxLayout()
+        hbox_yrange.addWidget(self.ax_ymin)
+        hbox_yrange.addWidget(QLabel(" to "))
+        hbox_yrange.addWidget(self.ax_ymax)
+        btn_yauto = QPushButton("Auto")
+        btn_yauto.setMaximumWidth(60)
+        btn_yauto.clicked.connect(self._autoscale_y)
+        hbox_yrange.addWidget(btn_yauto)
+        yrange_widget = QWidget()
+        yrange_widget.setLayout(hbox_yrange)
+        
         val = QDoubleValidator()
         self.ax_xmin.setValidator(val)
         self.ax_xmax.setValidator(val)
         self.ax_ymin.setValidator(val)
         self.ax_ymax.setValidator(val)
-        fax.addRow("X Min:", self.ax_xmin)
-        fax.addRow("X Max:", self.ax_xmax)
-        fax.addRow("Y Min:", self.ax_ymin)
-        fax.addRow("Y Max:", self.ax_ymax)
+        fax.addRow("X Range:", xrange_widget)
+        fax.addRow("Y Range:", yrange_widget)
         l_axis.addWidget(grp_ax)
         tabs.addTab(tab_axis, "Axis")
 
@@ -587,6 +675,35 @@ class TraceSettingsDialog(QDialog):
 
     def mark_modified(self, field):
         self.modified_fields.add(field)
+
+    def _autoscale_x(self):
+        """Clear X min and max to enable autoscaling"""
+        self.ax_xmin.clear()
+        self.ax_xmax.clear()
+        self.mark_modified('ax_xmin')
+        self.mark_modified('ax_xmax')
+
+    def _autoscale_y(self):
+        """Clear Y min and max to enable autoscaling"""
+        self.ax_ymin.clear()
+        self.ax_ymax.clear()
+        self.mark_modified('ax_ymin')
+        self.mark_modified('ax_ymax')
+
+    def _check_values_uniform(self, field_name):
+        """Check if a field has the same value across all selected traces.
+        Returns (is_uniform, value) where:
+        - is_uniform=True, value=common_value if all traces have the same value
+        - is_uniform=False, value=None if values differ
+        """
+        if len(self.traces) == 1:
+            return (True, self.traces[0].get(field_name))
+        
+        first_val = self.traces[0].get(field_name)
+        for trace in self.traces[1:]:
+            if trace.get(field_name) != first_val:
+                return (False, None)
+        return (True, first_val)
 
     def _on_xkey_changed(self):
         self.mark_modified('x_key')
@@ -619,7 +736,10 @@ class TraceSettingsDialog(QDialog):
         if 'yaxis' in self.modified_fields:
             data['yaxis'] = self.side_combo.currentText().lower()
         if 'yscale' in self.modified_fields:
-            data['yscale'] = self.yscale_combo.currentText().lower()
+            yscale_text = self.yscale_combo.currentText()
+            # If "Keep (Current)" is selected, don't apply
+            if yscale_text != "Keep (Current)":
+                data['yscale'] = yscale_text.lower()
 
         if 'linewidth' in self.modified_fields:
             data['linewidth'] = self.width_spin.value()
@@ -675,9 +795,10 @@ class TraceSettingsDialog(QDialog):
             data['ax_ymax'] = parse(self.ax_ymax.text())
         
         if 'x_key' in self.modified_fields:
-            idx = self.xkey_combo.currentIndex()
-            if idx > 0:  # Index 0 is "Keep (Current)"
-                data['x_key'] = self.xkey_combo.currentText()
+            xkey_text = self.xkey_combo.currentText()
+            # If "Keep (Current)" is selected, don't apply
+            if xkey_text != "Keep (Current)":
+                data['x_key'] = xkey_text
         
         return data
 
@@ -974,25 +1095,40 @@ class DataManagerDialog(QDialog):
                         if var_name not in available_vars:
                             available_vars.append(var_name)
 
-        # Dummy trace for TraceSettingsDialog
-        dummy = {
-            "label": "",
-            "file": fname,
-            "unit": "",
-            "linewidth": 1.0,
-            "color": "#000000",
-            "x_factor": 1.0,
-            "x_offset": 0.0,
-            "y_factor": 1.0,
-            "y_offset": 0.0,
-            "transform": "None",
-            "window_size": 5,
-            "ax_xlabel": "",
-            "ax_ylabel": "",
-            "yaxis": "left",
-            "yscale": "linear",
-        }
-        dlg = TraceSettingsDialog(dummy, self, available_vars=available_vars)
+        # Collect all traces linked to this file
+        # Enrich trace data with current axis limits
+        trace_list = []
+        for i in range(self.mw.tab_widget.count()):
+            pg = self.mw.tab_widget.widget(i)
+            if not isinstance(pg, PageCanvas):
+                continue
+            for tid, t in pg.traces.items():
+                if t["file"] == fname:
+                    t_copy = t.copy()  # Make a copy to avoid modifying original
+                    ax_idx = t_copy.get('ax_idx', 0)
+                    ax = pg.axes[ax_idx]
+                    
+                    # Get current axis limits and store them
+                    xlim = ax.get_xlim()
+                    ylim = ax.get_ylim()
+                    t_copy['ax_xmin'] = xlim[0]
+                    t_copy['ax_xmax'] = xlim[1]
+                    
+                    # For Y axis, check if right axis exists
+                    side = t_copy.get('yaxis', 'left')
+                    ax_r = pg.twins.get(ax)
+                    target_ax = ax_r if side == 'right' and ax_r is not None else ax
+                    ylim_target = target_ax.get_ylim()
+                    t_copy['ax_ymin'] = ylim_target[0]
+                    t_copy['ax_ymax'] = ylim_target[1]
+                    
+                    trace_list.append(t_copy)
+        
+        if not trace_list:
+            QMessageBox.warning(self, "No Traces", f"No traces found for {fname}.")
+            return
+        
+        dlg = TraceSettingsDialog(trace_list, self, available_vars=available_vars)
         if dlg.exec():
             settings = dlg.get_data()
             cnt = 0
@@ -1135,7 +1271,6 @@ class DataManagerDialog(QDialog):
         sel = self._selected_trace_rows()
         if not sel:
             return
-        pg0, tid0 = sel[0]
         
         # Get file_data_map from main_window (SPlotApp)
         available_vars = []
@@ -1148,7 +1283,31 @@ class DataManagerDialog(QDialog):
                         if var_name not in available_vars:
                             available_vars.append(var_name)
         
-        dlg = TraceSettingsDialog(pg0.traces[tid0], self, available_vars=available_vars)
+        # Pass all selected traces to the dialog
+        # Enrich trace data with current axis limits
+        trace_list = []
+        for pg, tid in sel:
+            t = pg.traces[tid].copy()  # Make a copy to avoid modifying original
+            ax_idx = t.get('ax_idx', 0)
+            ax = pg.axes[ax_idx]
+            
+            # Get current axis limits and store them
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+            t['ax_xmin'] = xlim[0]
+            t['ax_xmax'] = xlim[1]
+            
+            # For Y axis, check if right axis exists
+            side = t.get('yaxis', 'left')
+            ax_r = pg.twins.get(ax)
+            target_ax = ax_r if side == 'right' and ax_r is not None else ax
+            ylim_target = target_ax.get_ylim()
+            t['ax_ymin'] = ylim_target[0]
+            t['ax_ymax'] = ylim_target[1]
+            
+            trace_list.append(t)
+        
+        dlg = TraceSettingsDialog(trace_list, self, available_vars=available_vars)
         if not dlg.exec():
             return
         settings = dlg.get_data()
@@ -1505,7 +1664,26 @@ class PageCanvas(QWidget):
                         if var_name not in available_vars:
                             available_vars.append(var_name)
         
-        dlg = TraceSettingsDialog(self.traces[tid], self, available_vars=available_vars)
+        # Enrich trace with current axis limits (same as edit_selected_traces)
+        t = self.traces[tid].copy()
+        ax_idx = t.get('ax_idx', 0)
+        ax = self.axes[ax_idx]
+        
+        # Get current axis limits and store them
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        t['ax_xmin'] = xlim[0]
+        t['ax_xmax'] = xlim[1]
+        
+        # For Y axis, check if right axis exists
+        side = t.get('yaxis', 'left')
+        ax_r = self.twins.get(ax)
+        target_ax = ax_r if side == 'right' and ax_r is not None else ax
+        ylim_target = target_ax.get_ylim()
+        t['ax_ymin'] = ylim_target[0]
+        t['ax_ymax'] = ylim_target[1]
+        
+        dlg = TraceSettingsDialog(t, self, available_vars=available_vars)
         if dlg.exec():
             self.update_trace(tid, dlg.get_data())
 
