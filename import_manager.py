@@ -136,10 +136,10 @@ class BaseDelimitedImporter(BaseImporter):
 # ==========================================
 
 class CSVImporter(BaseDelimitedImporter):
-    """CSV and DAT file importer with configurable encoding and delimiter"""
+    """CSV file importer with configurable encoding and delimiter"""
     
     extension = ".csv"
-    description = "CSV/DAT Files"
+    description = "CSV Files"
     
     def _read_file(self, file_path: str, **options) -> Tuple[pd.DataFrame, str]:
         """Read CSV file"""
@@ -176,41 +176,6 @@ class ExcelImporter(BaseDelimitedImporter):
             return df, ""
         except Exception as e:
             return None, str(e)
-
-
-# ==========================================
-# JSON Importer (Example of extensibility)
-# ==========================================
-
-class JSONImporter(BaseImporter):
-    """JSON file importer"""
-    
-    extension = ".json"
-    description = "JSON Files"
-    
-    def import_file(self, file_path: str, **options) -> Tuple[bool, Optional[xr.Dataset], str]:
-        """Import JSON file"""
-        
-        try:
-            df = pd.read_json(file_path)
-            # Convert DataFrame to dataset
-            ds = xr.Dataset()
-            for col in df.columns:
-                col_name = str(col)
-                da = xr.DataArray(
-                    pd.to_numeric(df[col], errors='coerce'),
-                    coords={'index': df.index},
-                    dims='index'
-                )
-                da.attrs['unit'] = ""
-                ds[col_name] = da
-            return True, ds, ""
-        except Exception as e:
-            return False, None, str(e)
-    
-    def get_options_dialog(self, parent=None) -> Optional[Dict]:
-        """JSON doesn't need options dialog"""
-        return {}
 
 
 # ==========================================
@@ -435,7 +400,6 @@ class ImportManager:
         """Register standard importers"""
         self.register_importer(CSVImporter())
         self.register_importer(ExcelImporter())
-        self.register_importer(JSONImporter())
         self.register_importer(TSVImporter())
     
     def register_importer(self, importer: BaseImporter):

@@ -1131,7 +1131,7 @@ class DataFilesTab(QWidget):
             return
         
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select New File", "", "Data (*.csv *.dat *.xlsx);;All (*)"
+            self, "Select New File", "", "CSV Files (*.csv);;Excel Files (*.xlsx);;All (*)"
         )
         if not path:
             return
