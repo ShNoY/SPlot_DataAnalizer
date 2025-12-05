@@ -756,57 +756,26 @@ class TraceSettingsDialog(QDialog):
         
         return sign * selected * (10 ** order)
 
-    def _calculate_autoscale_limits(self, axis_dir='x'):
-        """Calculate nice axis limits based on current trace data.
-        axis_dir: 'x' or 'y'
-        Returns: (min_limit, max_limit) or None if no valid data
-        """
-        import numpy as np
-        
-        # Collect all data from selected traces
-        all_values = []
-        
-        for trace in self.traces:
-            if 'line' not in trace:
-                continue
-            
-            line = trace['line']
-            if axis_dir == 'x':
-                data = line.get_xdata()
-                factor = trace.get('x_factor', 1.0)
-                offset = trace.get('x_offset', 0.0)
-            else:  # 'y'
-                data = line.get_ydata()
-                factor = trace.get('y_factor', 1.0)
-                offset = trace.get('y_offset', 0.0)
-            
-            # Apply factor and offset
-            transformed = data * factor + offset
-            
-            # Filter out NaN and inf values
-            valid = transformed[np.isfinite(transformed)]
-            if len(valid) > 0:
-                all_values.extend(valid)
-        
-        if not all_values:
-            return None
-        
-        min_val = float(np.min(all_values))
-        max_val = float(np.max(all_values))
-        
-        # Add 5% margin
-        margin = (max_val - min_val) * 0.05
-        if margin == 0:
-            margin = abs(min_val) * 0.1 if min_val != 0 else 1.0
-        
-        nice_min = self._round_nice(min_val - margin, round_down=True)
-        nice_max = self._round_nice(max_val + margin, round_down=False)
-        
-        return (nice_min, nice_max)
-
     def _autoscale_x(self):
-        """Set X-axis limits to autoscale values."""
-        limits = self._calculate_autoscale_limits('x')
+        """Set X-axis limits to autoscale values.
+        Only works if X-axis limits are uniform (single data or same limits).
+        """
+        # Check if X limits are uniform
+        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
+        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
+        
+        if not (is_uniform_xmin and is_uniform_xmax):
+            # Multiple different values - don't apply autoscale
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Cannot Autoscale",
+                "X-axis limits differ across selected data.\n\n"
+                "Use the Autoscale button in Data Manager for multiple data."
+            )
+            return
+        
+        # Use PageCanvas static method for calculation
+        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'x')
         if limits:
             self.ax_xmin.setText(str(limits[0]))
             self.ax_xmax.setText(str(limits[1]))
@@ -814,8 +783,25 @@ class TraceSettingsDialog(QDialog):
             self.mark_modified('ax_xmax')
 
     def _autoscale_y(self):
-        """Set Y-axis limits to autoscale values."""
-        limits = self._calculate_autoscale_limits('y')
+        """Set Y-axis limits to autoscale values.
+        Only works if Y-axis limits are uniform (single data or same limits).
+        """
+        # Check if Y limits are uniform
+        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
+        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
+        
+        if not (is_uniform_ymin and is_uniform_ymax):
+            # Multiple different values - don't apply autoscale
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Cannot Autoscale",
+                "Y-axis limits differ across selected data.\n\n"
+                "Use the Autoscale button in Data Manager for multiple data."
+            )
+            return
+        
+        # Use PageCanvas static method for calculation
+        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'y')
         if limits:
             self.ax_ymin.setText(str(limits[0]))
             self.ax_ymax.setText(str(limits[1]))
@@ -1073,6 +1059,10 @@ class DataManagerDialog(QDialog):
         btn_xlink.clicked.connect(self.xlink_selected)
         btn_unlink = QPushButton("Unlink Selected")
         btn_unlink.clicked.connect(self.unlink_selected)
+        btn_autoscale_x = QPushButton("Autoscale X")
+        btn_autoscale_x.clicked.connect(self.autoscale_selected_x)
+        btn_autoscale_y = QPushButton("Autoscale Y")
+        btn_autoscale_y.clicked.connect(self.autoscale_selected_y)
         btn_ed_tr = QPushButton("Edit Selected...")
         btn_ed_tr.clicked.connect(self.edit_selected_traces)
         btn_dl_tr = QPushButton("Delete Selected")
@@ -1080,6 +1070,8 @@ class DataManagerDialog(QDialog):
 
         hb2.addWidget(btn_xlink)
         hb2.addWidget(btn_unlink)
+        hb2.addWidget(btn_autoscale_x)
+        hb2.addWidget(btn_autoscale_y)
         hb2.addStretch()
         hb2.addWidget(btn_ed_tr)
         hb2.addWidget(btn_dl_tr)
@@ -1462,6 +1454,34 @@ class DataManagerDialog(QDialog):
             pg.remove_trace(tid)
         self.refresh_traces()
 
+    def autoscale_selected_x(self):
+        """Apply autoscale to X-axis for each selected trace individually."""
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+        
+        for pg, tid in sel:
+            t = pg.traces[tid]
+            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'x')
+            if limits:
+                pg.update_trace(tid, {'ax_xmin': limits[0], 'ax_xmax': limits[1]})
+        
+        self.refresh_traces()
+
+    def autoscale_selected_y(self):
+        """Apply autoscale to Y-axis for each selected trace individually."""
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+        
+        for pg, tid in sel:
+            t = pg.traces[tid]
+            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'y')
+            if limits:
+                pg.update_trace(tid, {'ax_ymin': limits[0], 'ax_ymax': limits[1]})
+        
+        self.refresh_traces()
+
 
 # ==========================================
 # 3. Canvas & Mini Plot
@@ -1597,6 +1617,101 @@ class PageCanvas(QWidget):
             return
 
         self.global_xlim_changed.emit(link_id, xlim[0], xlim[1])
+
+    @staticmethod
+    def calculate_nice_autoscale_limits(traces_list, axis_dir='x'):
+        """
+        Static method to calculate nice autoscale limits for given traces.
+        
+        Args:
+            traces_list: List of trace dicts, each containing 'line', 'x_factor', 'x_offset', 'y_factor', 'y_offset'
+            axis_dir: 'x' or 'y'
+        
+        Returns:
+            (min_limit, max_limit) tuple or None if no valid data
+        """
+        import numpy as np
+        import math
+        
+        # Collect all data from traces
+        all_values = []
+        
+        for trace in traces_list:
+            if 'line' not in trace:
+                continue
+            
+            line = trace['line']
+            if axis_dir == 'x':
+                data = line.get_xdata()
+                factor = trace.get('x_factor', 1.0)
+                offset = trace.get('x_offset', 0.0)
+            else:  # 'y'
+                data = line.get_ydata()
+                factor = trace.get('y_factor', 1.0)
+                offset = trace.get('y_offset', 0.0)
+            
+            # Apply factor and offset
+            transformed = data * factor + offset
+            
+            # Filter out NaN and inf values
+            valid = transformed[np.isfinite(transformed)]
+            if len(valid) > 0:
+                all_values.extend(valid)
+        
+        if not all_values:
+            return None
+        
+        min_val = float(np.min(all_values))
+        max_val = float(np.max(all_values))
+        
+        # Add 5% margin
+        margin = (max_val - min_val) * 0.05
+        if margin == 0:
+            margin = abs(min_val) * 0.1 if min_val != 0 else 1.0
+        
+        # Calculate nice limits
+        nice_min = PageCanvas._round_to_nice(min_val - margin, round_down=True)
+        nice_max = PageCanvas._round_to_nice(max_val + margin, round_down=False)
+        
+        return (nice_min, nice_max)
+
+    @staticmethod
+    def _round_to_nice(value, round_down=False):
+        """
+        Round value to a nice number for axis limits.
+        Nice numbers are: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10
+        """
+        import math
+        if value == 0:
+            return 0
+        
+        sign = -1 if value < 0 else 1
+        abs_val = abs(value)
+        
+        # Get order of magnitude
+        order = math.floor(math.log10(abs_val))
+        normalized = abs_val / (10 ** order)
+        
+        # Nice numbers in order
+        nice_numbers = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+        
+        if round_down:
+            # Find the largest nice number <= normalized
+            selected = nice_numbers[0]
+            for nice in nice_numbers:
+                if nice <= normalized:
+                    selected = nice
+                else:
+                    break
+        else:
+            # Find the smallest nice number >= normalized
+            selected = nice_numbers[-1]
+            for nice in nice_numbers:
+                if nice >= normalized:
+                    selected = nice
+                    break
+        
+        return sign * selected * (10 ** order)
 
     def apply_global_xlim(self, link_id, xmin, xmax):
         if self._updating_xlim:
