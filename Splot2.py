@@ -10,6 +10,26 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.backends.backend_pdf import PdfPages
+
+# Set matplotlib font for Japanese characters
+import matplotlib
+try:
+    # Try to find a suitable Japanese font
+    import platform
+    if platform.system() == 'Windows':
+        # Windows: Try MS Gothic, Yu Gothic, or Meiryo
+        matplotlib.rcParams['font.sans-serif'] = ['Yu Gothic', 'MS Gothic', 'Meiryo', 'DejaVu Sans']
+    elif platform.system() == 'Darwin':
+        # macOS: Try Hiragino Sans
+        matplotlib.rcParams['font.sans-serif'] = ['Hiragino Sans', 'DejaVu Sans']
+    else:
+        # Linux: Try Noto Sans CJK
+        matplotlib.rcParams['font.sans-serif'] = ['Noto Sans CJK JP', 'DejaVu Sans']
+except:
+    pass
+
+matplotlib.rcParams['axes.unicode_minus'] = False
+
 # Base code
 # --- Matplotlib Backend ---
 try:
@@ -791,9 +811,14 @@ class DiagramSettingsDialog(QDialog):
         self.accept()
 
     def apply(self):
-        self.ax_l.set_title(self.tit.text())
-        self.ax_l.set_xlabel(self.xl.text())
-        self.ax_l.set_ylabel(self.yl_l.text())
+        # Set labels with explicit font for Japanese support
+        import matplotlib.font_manager
+        font_prop = matplotlib.font_manager.FontProperties(
+            family=matplotlib.rcParams['font.sans-serif'][0])
+        
+        self.ax_l.set_title(self.tit.text(), fontproperties=font_prop)
+        self.ax_l.set_xlabel(self.xl.text(), fontproperties=font_prop)
+        self.ax_l.set_ylabel(self.yl_l.text(), fontproperties=font_prop)
         self.ax_l.set_xlim(self.xmin.value(), self.xmax.value())
         self.ax_l.set_ylim(self.ymin_l.value(), self.ymax_l.value())
         self.ax_l.grid(self.grid_l.isChecked())
@@ -804,7 +829,7 @@ class DiagramSettingsDialog(QDialog):
         self.ax_l.set_yscale(yscale_text_l)
         
         if self.ax_r:
-            self.ax_r.set_ylabel(self.yl_r.text())
+            self.ax_r.set_ylabel(self.yl_r.text(), fontproperties=font_prop)
             self.ax_r.set_ylim(self.ymin_r.value(), self.ymax_r.value())
             yscale_text_r = self.yscale_combo_r.currentText().lower()
             self.ax_r.set_yscale(yscale_text_r)
@@ -1368,6 +1393,11 @@ class PageCanvas(QWidget):
 
         # Matplotlib Figure/Canvas
         self.fig = Figure(figsize=(8, 11), dpi=100)
+        
+        # Ensure Japanese font is used for this figure
+        self.fig.text(0, 0, '', fontproperties=matplotlib.font_manager.FontProperties(
+            family=matplotlib.rcParams['font.sans-serif'][0]))
+        
         self.canvas = FigureCanvas(self.fig)
         self.toolbar = NavigationToolbar(self.canvas, self)
 
@@ -1638,11 +1668,16 @@ class PageCanvas(QWidget):
         if style is None:
             style = {}
 
+        # Set font for Japanese support
+        import matplotlib.font_manager
+        font_prop = matplotlib.font_manager.FontProperties(
+            family=matplotlib.rcParams['font.sans-serif'][0])
+
         # Default labels for left axis
         if not ax.get_xlabel():
-            ax.set_xlabel(x_label)
+            ax.set_xlabel(x_label, fontproperties=font_prop)
         if not ax.get_ylabel() or ax.get_ylabel() == "Value":
-            ax.set_ylabel(f"{label} [{unit}]")
+            ax.set_ylabel(f"{label} [{unit}]", fontproperties=font_prop)
 
         kw = {'label': label, 'picker': 5}
         if style:
@@ -1655,7 +1690,7 @@ class PageCanvas(QWidget):
                 self.twins[ax] = ax.twinx()
             target_ax = self.twins[ax]
             if not target_ax.get_ylabel():
-                target_ax.set_ylabel(f"{label} [{unit}]")
+                target_ax.set_ylabel(f"{label} [{unit}]", fontproperties=font_prop)
 
         line, = target_ax.plot(x, y, **kw)
         tid = f"t_{self.trace_cnt}"
@@ -1681,9 +1716,9 @@ class PageCanvas(QWidget):
             ax_ylab = target_ax.get_ylabel()
 
         if ax_xlab:
-            ax.set_xlabel(ax_xlab)
+            ax.set_xlabel(ax_xlab, fontproperties=font_prop)
         if ax_ylab:
-            target_ax.set_ylabel(ax_ylab)
+            target_ax.set_ylabel(ax_ylab, fontproperties=font_prop)
         target_ax.set_yscale(scale)
 
         self.traces[tid] = {
