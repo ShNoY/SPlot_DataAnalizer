@@ -2216,10 +2216,15 @@ class SPlotApp(QMainWindow):
         
         self.undo_mgr.push(f"Import {importer.description}")
         
-        # Get options if available
+        # Get options if available - pass file_path for CSV/Excel/TSV preview
         options = {}
         if importer.get_options_dialog:
-            options = importer.get_options_dialog(self)
+            from import_manager import CSVImporter, ExcelImporter, TSVImporter, CSVImportOptionsDialog
+            if isinstance(importer, (CSVImporter, ExcelImporter, TSVImporter)):
+                options = CSVImportOptionsDialog.get_options(self, p)
+            else:
+                options = importer.get_options_dialog(self)
+            
             if options is None:  # User cancelled
                 return
         
