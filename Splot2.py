@@ -2357,9 +2357,18 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
         bl.addWidget(self.chan_table)
 
         self.tgt_combo = QComboBox()
-        self.tgt_combo.addItems([f"Diagram {i + 1}" for i in range(4)])
+        self.tgt_combo.addItems([f"Diagram {i + 1}" for i in range(4)] + ["Input target Diagram"])
+        self.tgt_combo.currentIndexChanged.connect(self.on_target_changed)
         bl.addWidget(QLabel("Target:"))
         bl.addWidget(self.tgt_combo)
+        
+        # Custom diagram input (hidden by default)
+        self.tgt_spin = QSpinBox()
+        self.tgt_spin.setMinimum(1)
+        self.tgt_spin.setMaximum(99)
+        self.tgt_spin.setValue(1)
+        self.tgt_spin.setVisible(False)
+        bl.addWidget(self.tgt_spin)
 
         btn = QPushButton("Load / Plot")
         btn.clicked.connect(self.plot_data)
@@ -2493,6 +2502,11 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                 self.mini_plot.plot(x, ds[var].values, var)
             except Exception:
                 pass
+
+    def on_target_changed(self):
+        """Toggle custom diagram input based on combo selection"""
+        is_custom = self.tgt_combo.currentIndex() == 4
+        self.tgt_spin.setVisible(is_custom)
 
     def add_page_dialog(self):
         dlg = NewPageDialog(self)
@@ -2743,7 +2757,13 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                 return
         else:
             final_list = [(self.current_file, l) for l in labels]
-        ax_idx = self.tgt_combo.currentIndex()
+        
+        # Get target diagram index
+        if self.tgt_combo.currentIndex() == 4:
+            # Custom input
+            ax_idx = self.tgt_spin.value() - 1
+        else:
+            ax_idx = self.tgt_combo.currentIndex()
         for fname, var in final_list:
             ds_target = self.file_data_map[fname]['ds']
             u = ds_target[var].attrs.get('unit', '')
