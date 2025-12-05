@@ -51,8 +51,8 @@ from PyQt6.QtWidgets import (
     QButtonGroup, QFrame, QSizePolicy, QListWidget, QListWidgetItem,
     QInputDialog
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QUrl
-from PyQt6.QtGui import QAction, QColor, QKeySequence, QDoubleValidator, QDesktopServices, QIcon
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QUrl, QPoint
+from PyQt6.QtGui import QAction, QColor, QKeySequence, QDoubleValidator, QDesktopServices, QIcon, QCursor
 
 # Import Manager
 from import_manager import get_import_manager
@@ -109,6 +109,67 @@ class UndoManager:
         target = self.undo_stack[index]
         self.app.set_state(target['state'])
         self.is_restoring = False
+
+# ==========================================
+# 0b. File History Manager
+# ==========================================
+class FileHistoryManager:
+    """Manages .splot file open/save history"""
+    
+    def __init__(self, max_items=50):
+        self.max_items = max_items
+        self.history = []  # List of dicts: {'path': str, 'timestamp': str}
+        self.log_file = os.path.join(os.getcwd(), 'fileLog.txt')
+        self.load_history()
+    
+    def load_history(self):
+        """Load history from fileLog.txt"""
+        if os.path.exists(self.log_file):
+            try:
+                with open(self.log_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            # Format: "YYYY-MM-DD HH:MM:SS | /path/to/file.splot"
+                            parts = line.split(' | ', 1)
+                            if len(parts) == 2:
+                                self.history.append({
+                                    'timestamp': parts[0],
+                                    'path': parts[1]
+                                })
+            except Exception:
+                pass
+    
+    def add_entry(self, file_path):
+        """Add a new entry to history"""
+        if not file_path:
+            return
+        
+        # Remove if already exists (to move to top)
+        self.history = [h for h in self.history if h['path'] != file_path]
+        
+        # Add to top
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.history.insert(0, {'timestamp': timestamp, 'path': file_path})
+        
+        # Keep only max_items
+        self.history = self.history[:self.max_items]
+        
+        # Save to file
+        self.save_history()
+    
+    def save_history(self):
+        """Save history to fileLog.txt"""
+        try:
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                for entry in self.history:
+                    f.write(f"{entry['timestamp']} | {entry['path']}\n")
+        except Exception:
+            pass
+    
+    def get_history(self):
+        """Get all history entries"""
+        return self.history
 
 # ==========================================
 # 1. Dialogs
@@ -2285,6 +2346,7 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
         self.file_data_map = {}
         self.current_file = None
         self.undo_mgr = UndoManager(self)
+        self.file_history_mgr = FileHistoryManager()
         self.setup_ui()
         self.setup_formula_support()  # Initialize formula functionality AFTER UI setup
 
@@ -2294,6 +2356,7 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
         ly = QVBoxLayout(mw)
 
         tb = QToolBar("Main")
+        self.toolbar = tb  # Save toolbar reference for menu positioning
         tb.addAction("New Page", self.add_page_dialog).setShortcut(QKeySequence("Ctrl+N"))
         
         # Import button with dropdown menu for different formats
@@ -2320,7 +2383,13 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
         tb.addAction("Help", self.open_help)
         tb.addSeparator()
         tb.addAction("Save Project", self.save_project).setShortcut(QKeySequence("Ctrl+S"))
-        tb.addAction("Open Project", self.load_project).setShortcut(QKeySequence("Ctrl+O"))
+        
+        # Open Project with dropdown menu (file selection + history)
+        open_action = tb.addAction("Open Project")
+        open_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_action.triggered.connect(self.show_open_project_menu)
+        self.open_action = open_action  # Save action reference for menu positioning
+        
         tb.addAction("Export PDF", self.export_pdf).setShortcut(QKeySequence("Ctrl+E"))
         ly.addWidget(tb)
 
@@ -2931,6 +3000,8 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             # Use gzip compression to reduce file size by ~90%
             with gzip.open(p, 'wb', compresslevel=9) as f:
                 pickle.dump(state, f)
+            # Add to file history
+            self.file_history_mgr.add_entry(p)
             QMessageBox.information(self, "OK", "Saved.")
         except Exception as e:
             QMessageBox.critical(self, "Err", str(e))
@@ -2946,8 +3017,66 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             with gzip.open(p, 'rb') as f:
                 state = pickle.load(f)
             self.set_state(state)
+            # Add to file history
+            self.file_history_mgr.add_entry(p)
         except Exception as e:
             QMessageBox.critical(self, "Err", str(e))
+    
+    def show_open_project_menu(self):
+        """Show dropdown menu with file selection at top and history below"""
+        menu = QMenu()
+        
+        # Top option: Open File submenu
+        open_file_menu = menu.addMenu("Open File")
+        browse_action = open_file_menu.addAction("Browse...")
+        browse_action.triggered.connect(self.load_project)
+        
+        # Separator
+        menu.addSeparator()
+        
+        # History entries
+        history = self.file_history_mgr.get_history()
+        if history:
+            for entry in history:
+                # Display: "filename (timestamp)"
+                filename = os.path.basename(entry['path'])
+                timestamp = entry['timestamp']
+                label = f"{filename} ({timestamp})"
+                action = menu.addAction(label)
+                action.triggered.connect(lambda checked=False, path=entry['path']: self.load_project_from_path(path))
+        else:
+            no_history_action = menu.addAction("(No recent projects)")
+            no_history_action.setEnabled(False)
+        
+        # Show menu at Open Project button position
+        if hasattr(self, 'open_action'):
+            # Find the button widget in toolbar
+            btn_widget = self.toolbar.widgetForAction(self.open_action)
+            if btn_widget:
+                pos = btn_widget.mapToGlobal(btn_widget.rect().bottomLeft())
+                menu.exec(pos)
+            else:
+                menu.popup(QCursor.pos())
+        else:
+            menu.popup(QCursor.pos())
+    
+    def load_project_from_path(self, file_path):
+        """Load project from specific file path"""
+        if not os.path.exists(file_path):
+            QMessageBox.critical(self, "Error", f"File not found:\n{file_path}")
+            return
+        
+        self.undo_mgr.push("Load Project")
+        try:
+            import gzip
+            with gzip.open(file_path, 'rb') as f:
+                state = pickle.load(f)
+            self.set_state(state)
+            # Update history
+            self.file_history_mgr.add_entry(file_path)
+            QMessageBox.information(self, "OK", "Project loaded.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load:\n{str(e)}")
 
     def export_pdf(self):
         p, _ = QFileDialog.getSaveFileName(self, "Export PDF", "", "PDF (*.pdf)")
