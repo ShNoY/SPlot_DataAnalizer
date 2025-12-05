@@ -1172,16 +1172,8 @@ class DataManagerDialog(QDialog):
             return
         fname = self.file_tbl.item(rows[0].row(), 1).text()
 
-        # Collect available variables from file_data_map
-        available_vars = []
-        if hasattr(self.mw, 'file_data_map') and self.mw.file_data_map:
-            for file_key in self.mw.file_data_map:
-                file_info = self.mw.file_data_map[file_key]
-                ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
-                if ds is not None and hasattr(ds, 'data_vars'):
-                    for var_name in ds.data_vars:
-                        if var_name not in available_vars:
-                            available_vars.append(var_name)
+        # Get all available variables
+        available_vars = self.mw.get_available_variables()
 
         # Collect all traces linked to this file
         # Enrich trace data with current axis limits
@@ -1360,16 +1352,8 @@ class DataManagerDialog(QDialog):
         if not sel:
             return
         
-        # Get file_data_map from main_window (SPlotApp)
-        available_vars = []
-        if hasattr(self.mw, 'file_data_map') and self.mw.file_data_map:
-            for file_key in self.mw.file_data_map:
-                file_info = self.mw.file_data_map[file_key]
-                ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
-                if ds is not None and hasattr(ds, 'data_vars'):
-                    for var_name in ds.data_vars:
-                        if var_name not in available_vars:
-                            available_vars.append(var_name)
+        # Get all available variables
+        available_vars = self.mw.get_available_variables()
         
         # Pass all selected traces to the dialog
         # Enrich trace data with current axis limits
@@ -2481,6 +2465,30 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                 except Exception:
                     xd = ds.coords['index'].values
                 pg.add_trace(xd, yd, lbl, unit, fname, vk, xk, "Loaded", ax)
+
+    def get_available_variables(self, include_files=None):
+        """
+        Get list of all available variables across file_data_map.
+        
+        Args:
+            include_files: List of file names to include. If None, include all files.
+            
+        Returns:
+            List of variable names
+        """
+        available_vars = []
+        for fname, fdata in self.file_data_map.items():
+            if include_files is not None and fname not in include_files:
+                continue
+            
+            file_info = fdata if isinstance(fdata, dict) else {'ds': fdata}
+            ds = file_info.get('ds') if isinstance(file_info, dict) else file_info
+            if ds is not None and hasattr(ds, 'data_vars'):
+                for var_name in ds.data_vars:
+                    if var_name not in available_vars:
+                        available_vars.append(var_name)
+        
+        return available_vars
 
     def open_data_manager(self):
         self.undo_mgr.push("Open Data Manager")

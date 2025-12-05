@@ -56,158 +56,126 @@ class BaseImporter(ABC):
 
 
 # ==========================================
+# Base Delimited Importer (CSV/TSV/Excel)
+# ==========================================
+
+class BaseDelimitedImporter(BaseImporter):
+    """
+    Base class for delimited data importers (CSV, TSV, Excel).
+    Handles common logic for structured tabular data with optional headers and units.
+    """
+    
+    def _read_file(self, file_path: str, **options) -> Tuple[pd.DataFrame, str]:
+        """
+        Read file and return raw DataFrame.
+        Subclasses should override this to handle format-specific reading.
+        
+        Returns:
+            (DataFrame, error_message)
+        """
+        raise NotImplementedError
+    
+    def import_file(self, file_path: str, **options) -> Tuple[bool, Optional[xr.Dataset], str]:
+        """Import delimited file with structured header and unit rows"""
+        
+        try:
+            # Read raw file
+            df_raw, error = self._read_file(file_path, **options)
+            if error:
+                return False, None, error
+            
+            # Extract configuration
+            header_row = options.get('header_row', 0)
+            unit_row = options.get('unit_row', None)
+            data_start_row = options.get('data_start_row', 1)
+            
+            # Extract series names from header row
+            series_names = df_raw.iloc[header_row].values
+            
+            # Extract units if specified
+            units = None
+            if unit_row is not None:
+                units = df_raw.iloc[unit_row].values
+            
+            # Extract data starting from data_start_row
+            df_data = df_raw.iloc[data_start_row:].reset_index(drop=True)
+            df_data.columns = series_names
+            
+            # Convert to dataset
+            ds = self._dataframe_to_dataset(df_data, units)
+            return True, ds, ""
+            
+        except Exception as e:
+            return False, None, str(e)
+    
+    @staticmethod
+    def _dataframe_to_dataset(df: pd.DataFrame, units: Optional[np.ndarray] = None) -> xr.Dataset:
+        """Convert DataFrame to xarray Dataset with optional units"""
+        ds = xr.Dataset()
+        
+        for i, col in enumerate(df.columns):
+            col_name = str(col)
+            unit = str(units[i]) if units is not None else ""
+            
+            if "Unnamed" in unit:
+                unit = ""
+            
+            da = xr.DataArray(
+                pd.to_numeric(df.iloc[:, i], errors='coerce'),
+                coords={'index': df.index},
+                dims='index'
+            )
+            da.attrs['unit'] = unit
+            ds[col_name] = da
+        
+        return ds
+
+
+# ==========================================
 # CSV/DAT Importer
 # ==========================================
 
-class CSVImporter(BaseImporter):
+class CSVImporter(BaseDelimitedImporter):
     """CSV and DAT file importer with configurable encoding and delimiter"""
     
     extension = ".csv"
     description = "CSV/DAT Files"
     
-    def import_file(self, file_path: str, **options) -> Tuple[bool, Optional[xr.Dataset], str]:
-        """Import CSV/DAT file with specified encoding and delimiter"""
-        
+    def _read_file(self, file_path: str, **options) -> Tuple[pd.DataFrame, str]:
+        """Read CSV file"""
         encoding = options.get('encoding', 'utf-8')
         delimiter = options.get('delimiter', ',')
-        header_row = options.get('header_row', 0)
-        unit_row = options.get('unit_row', None)
-        data_start_row = options.get('data_start_row', 1)
         
         try:
-            # Read raw file
-            df_raw = pd.read_csv(
+            df = pd.read_csv(
                 file_path,
                 header=None,
                 encoding=encoding,
                 delimiter=delimiter,
                 low_memory=False
             )
-            
-            # Extract series names from header row
-            series_names = df_raw.iloc[header_row].values
-            
-            # Extract units if specified
-            units = None
-            if unit_row is not None:
-                units = df_raw.iloc[unit_row].values
-            
-            # Extract data starting from data_start_row
-            df_data = df_raw.iloc[data_start_row:].reset_index(drop=True)
-            df_data.columns = series_names
-            
-            # Convert to dataset
-            ds = xr.Dataset()
-            is_multi = False
-            
-            for i, col in enumerate(df_data.columns):
-                col_name = str(col)
-                unit = str(units[i]) if units is not None else ""
-                
-                if "Unnamed" in unit:
-                    unit = ""
-                
-                da = xr.DataArray(
-                    pd.to_numeric(df_data.iloc[:, i], errors='coerce'),
-                    coords={'index': df_data.index},
-                    dims='index'
-                )
-                da.attrs['unit'] = unit
-                ds[col_name] = da
-            
-            return True, ds, ""
+            return df, ""
         except Exception as e:
-            return False, None, str(e)
-    
-    def get_options_dialog(self, parent=None) -> Optional[Dict]:
-        """Show options dialog for CSV import"""
-        # Note: This is called without file_path in some contexts
-        # The file_path should be passed from the caller
-        return None  # Let caller handle dialog with file_path
-    
-    @staticmethod
-    def _df_to_dataset(df: pd.DataFrame) -> xr.Dataset:
-        """Convert DataFrame to xarray Dataset"""
-        ds = xr.Dataset()
-        is_multi = isinstance(df.columns, pd.MultiIndex)
-        
-        for c in df.columns:
-            if is_multi:
-                l, u = (str(c[0]), str(c[1]))
-            else:
-                l, u = (str(c), "")
-            
-            if "Unnamed" in u:
-                u = ""
-            
-            da = xr.DataArray(
-                pd.to_numeric(df[c], errors='coerce'),
-                coords={'index': df.index},
-                dims='index'
-            )
-            da.attrs['unit'] = u
-            ds[l] = da
-        
-        return ds
+            return None, str(e)
 
 
 # ==========================================
 # Excel Importer
 # ==========================================
 
-class ExcelImporter(BaseImporter):
+class ExcelImporter(BaseDelimitedImporter):
     """Excel file importer with data structure options"""
     
     extension = ".xlsx"
     description = "Excel Files"
     
-    def import_file(self, file_path: str, **options) -> Tuple[bool, Optional[xr.Dataset], str]:
-        """Import Excel file with specified data structure"""
-        
-        header_row = options.get('header_row', 0)
-        unit_row = options.get('unit_row', None)
-        data_start_row = options.get('data_start_row', 1)
-        
+    def _read_file(self, file_path: str, **options) -> Tuple[pd.DataFrame, str]:
+        """Read Excel file"""
         try:
-            # Read all rows from first sheet
-            df_raw = pd.read_excel(file_path, header=None, sheet_name=0)
-            
-            # Extract series names from header row
-            series_names = df_raw.iloc[header_row].values
-            
-            # Extract units if specified
-            units = None
-            if unit_row is not None:
-                units = df_raw.iloc[unit_row].values
-            
-            # Extract data starting from data_start_row
-            df_data = df_raw.iloc[data_start_row:].reset_index(drop=True)
-            df_data.columns = series_names
-            
-            # Convert to dataset
-            ds = xr.Dataset()
-            for i, col in enumerate(df_data.columns):
-                col_name = str(col)
-                unit = str(units[i]) if units is not None else ""
-                
-                if "Unnamed" in unit:
-                    unit = ""
-                
-                da = xr.DataArray(
-                    pd.to_numeric(df_data.iloc[:, i], errors='coerce'),
-                    coords={'index': df_data.index},
-                    dims='index'
-                )
-                da.attrs['unit'] = unit
-                ds[col_name] = da
-            
-            return True, ds, ""
+            df = pd.read_excel(file_path, header=None, sheet_name=0)
+            return df, ""
         except Exception as e:
-            return False, None, str(e)
-    
-    def get_options_dialog(self, parent=None) -> Optional[Dict]:
-        """Show options dialog for Excel import"""
-        return None  # Will be handled specially in ImportManager
+            return None, str(e)
 
 
 # ==========================================
@@ -249,66 +217,31 @@ class JSONImporter(BaseImporter):
 # TSV Importer
 # ==========================================
 
-class TSVImporter(BaseImporter):
+# ==========================================
+# TSV Importer
+# ==========================================
+
+class TSVImporter(BaseDelimitedImporter):
     """Tab-separated values importer with data structure options"""
     
     extension = ".tsv"
     description = "Tab-Separated Values"
     
-    def import_file(self, file_path: str, **options) -> Tuple[bool, Optional[xr.Dataset], str]:
-        """Import TSV file with specified data structure"""
-        
+    def _read_file(self, file_path: str, **options) -> Tuple[pd.DataFrame, str]:
+        """Read TSV file"""
         encoding = options.get('encoding', 'utf-8')
-        header_row = options.get('header_row', 0)
-        unit_row = options.get('unit_row', None)
-        data_start_row = options.get('data_start_row', 1)
         
         try:
-            # Read raw file
-            df_raw = pd.read_csv(
+            df = pd.read_csv(
                 file_path,
                 header=None,
                 encoding=encoding,
                 delimiter='\t',
                 low_memory=False
             )
-            
-            # Extract series names from header row
-            series_names = df_raw.iloc[header_row].values
-            
-            # Extract units if specified
-            units = None
-            if unit_row is not None:
-                units = df_raw.iloc[unit_row].values
-            
-            # Extract data starting from data_start_row
-            df_data = df_raw.iloc[data_start_row:].reset_index(drop=True)
-            df_data.columns = series_names
-            
-            # Convert to dataset
-            ds = xr.Dataset()
-            for i, col in enumerate(df_data.columns):
-                col_name = str(col)
-                unit = str(units[i]) if units is not None else ""
-                
-                if "Unnamed" in unit:
-                    unit = ""
-                
-                da = xr.DataArray(
-                    pd.to_numeric(df_data.iloc[:, i], errors='coerce'),
-                    coords={'index': df_data.index},
-                    dims='index'
-                )
-                da.attrs['unit'] = unit
-                ds[col_name] = da
-            
-            return True, ds, ""
+            return df, ""
         except Exception as e:
-            return False, None, str(e)
-    
-    def get_options_dialog(self, parent=None) -> Optional[Dict]:
-        """Show options dialog for TSV import"""
-        return None  # Will be handled specially in ImportManager
+            return None, str(e)
 
 
 # ==========================================
