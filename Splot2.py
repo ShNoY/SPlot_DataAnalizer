@@ -1552,6 +1552,19 @@ class DatasetTab(QWidget):
             t['ax_ymin'] = ylim_target[0]
             t['ax_ymax'] = ylim_target[1]
             
+            # Update axis visibility settings from current graph state
+            # X-axis label visibility
+            t['show_xlabel'] = ax.xaxis.label.get_visible()
+            
+            # Y-axis label visibility
+            t['show_ylabel'] = target_ax.yaxis.label.get_visible()
+            
+            # X-axis scale (ticks and tick labels) visibility
+            t['show_xticks'] = ax.xaxis.get_visible()
+            
+            # Y-axis scale (ticks and tick labels) visibility
+            t['show_yticks'] = target_ax.yaxis.get_visible()
+            
             trace_list.append(t)
         
         dlg = TraceSettingsDialog(trace_list, self, available_vars=available_vars)
@@ -1644,6 +1657,16 @@ class AxisInfo:
         self.xmax: Optional[float] = None
         self.ymin: Optional[float] = None
         self.ymax: Optional[float] = None
+        
+        # Axis display settings
+        self.show_xlabel = True
+        self.show_ylabel = True
+        self.show_xticks = True
+        self.show_yticks = True
+        
+        # Axis font settings
+        self.font_name = 'Arial'
+        self.font_size = 10
     
 
 
@@ -2420,14 +2443,26 @@ class PageCanvas(QWidget):
             show = s['show_ylabel']
             req_ax.yaxis.label.set_visible(show)
             t['show_ylabel'] = show
+            # Update AxisInfo
+            self.axis_info[ax_idx].show_ylabel = show
         if 'show_xticks' in s:
             show = s['show_xticks']
             primary.xaxis.set_visible(show)
             t['show_xticks'] = show
+            # Update AxisInfo
+            self.axis_info[ax_idx].show_xticks = show
         if 'show_yticks' in s:
             show = s['show_yticks']
             req_ax.yaxis.set_visible(show)
             t['show_yticks'] = show
+            # Update AxisInfo
+            self.axis_info[ax_idx].show_yticks = show
+        if 'show_xlabel' in s:
+            show = s['show_xlabel']
+            primary.xaxis.label.set_visible(show)
+            t['show_xlabel'] = show
+            # Update AxisInfo
+            self.axis_info[ax_idx].show_xlabel = show
 
         # Handle font settings
         if 'font_name' in s or 'font_size' in s:
@@ -2446,11 +2481,13 @@ class PageCanvas(QWidget):
             for label in req_ax.get_yticklabels():
                 label.set_fontproperties(font_prop)
             
-            # Store in trace
+            # Update AxisInfo
             if 'font_name' in s:
                 t['font_name'] = s['font_name']
+                self.axis_info[ax_idx].font_name = s['font_name']
             if 'font_size' in s:
                 t['font_size'] = s['font_size']
+                self.axis_info[ax_idx].font_size = s['font_size']
 
         # Handle X-axis reference change
         if 'x_key' in s:
@@ -2683,7 +2720,13 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                         'xmin': info.xmin,
                         'xmax': info.xmax,
                         'ymin': info.ymin,
-                        'ymax': info.ymax
+                        'ymax': info.ymax,
+                        'show_xlabel': info.show_xlabel,
+                        'show_ylabel': info.show_ylabel,
+                        'show_xticks': info.show_xticks,
+                        'show_yticks': info.show_yticks,
+                        'font_name': info.font_name,
+                        'font_size': info.font_size
                     }
                 
                 pages_data.append({
@@ -2730,6 +2773,12 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                         pg.axis_info[ax_idx].xmax = ax_info.get('xmax')
                         pg.axis_info[ax_idx].ymin = ax_info.get('ymin')
                         pg.axis_info[ax_idx].ymax = ax_info.get('ymax')
+                        pg.axis_info[ax_idx].show_xlabel = ax_info.get('show_xlabel', True)
+                        pg.axis_info[ax_idx].show_ylabel = ax_info.get('show_ylabel', True)
+                        pg.axis_info[ax_idx].show_xticks = ax_info.get('show_xticks', True)
+                        pg.axis_info[ax_idx].show_yticks = ax_info.get('show_yticks', True)
+                        pg.axis_info[ax_idx].font_name = ax_info.get('font_name', 'Arial')
+                        pg.axis_info[ax_idx].font_size = ax_info.get('font_size', 10)
                         
                         # Apply to matplotlib axes
                         ax = pg.axes[ax_idx]
@@ -2737,6 +2786,19 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                             ax.set_xlabel(ax_info['xlabel'])
                         if ax_info.get('yscale'):
                             ax.set_yscale(ax_info['yscale'])
+                        
+                        # Apply axis display settings
+                        ax.xaxis.label.set_visible(ax_info.get('show_xlabel', True))
+                        ax.xaxis.set_visible(ax_info.get('show_xticks', True))
+                        
+                        # Apply font settings to axis
+                        import matplotlib.font_manager
+                        font_name = ax_info.get('font_name', 'Arial')
+                        font_size = ax_info.get('font_size', 10)
+                        font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+                        ax.xaxis.label.set_fontproperties(font_prop)
+                        for label in ax.get_xticklabels():
+                            label.set_fontproperties(font_prop)
 
             for tid, t_cfg in pd_['traces'].items():
                 ax_idx = t_cfg['ax_idx']
@@ -2801,6 +2863,30 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                 if j < len(pg.axes):
                     pg.axes[j].set_xlim(xlim)
                     pg.axes[j].set_ylim(ylim)
+            
+            # Apply Y-axis display and font settings from axis_info
+            if 'axes_info' in pd_:
+                import matplotlib.font_manager
+                for ax_idx, ax_info in pd_['axes_info'].items():
+                    ax_idx = int(ax_idx)
+                    if ax_idx < len(pg.axes):
+                        ax = pg.axes[ax_idx]
+                        target_ax = pg.twins.get(ax, ax)  # Use twin if exists
+                        
+                        # Apply Y-axis label visibility
+                        target_ax.yaxis.label.set_visible(ax_info.get('show_ylabel', True))
+                        
+                        # Apply Y-axis scale visibility
+                        target_ax.yaxis.set_visible(ax_info.get('show_yticks', True))
+                        
+                        # Apply Y-axis font settings
+                        font_name = ax_info.get('font_name', 'Arial')
+                        font_size = ax_info.get('font_size', 10)
+                        font_prop = matplotlib.font_manager.FontProperties(family=font_name, size=font_size)
+                        target_ax.yaxis.label.set_fontproperties(font_prop)
+                        for label in target_ax.get_yticklabels():
+                            label.set_fontproperties(font_prop)
+            
             pg.add_legend()
             pg.canvas.draw()
 
