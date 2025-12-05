@@ -1321,7 +1321,7 @@ class DatasetTab(QWidget):
         
         for pg, tid in sel:
             t = pg.traces[tid]
-            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'x')
+            limits = AutoscaleCalculator.calculate_limits([t], 'x')
             if limits:
                 pg.update_trace(tid, {'ax_xmin': limits[0], 'ax_xmax': limits[1]})
         
@@ -1335,7 +1335,7 @@ class DatasetTab(QWidget):
         
         for pg, tid in sel:
             t = pg.traces[tid]
-            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'y')
+            limits = AutoscaleCalculator.calculate_limits([t], 'y')
             if limits:
                 pg.update_trace(tid, {'ax_ymin': limits[0], 'ax_ymax': limits[1]})
         
@@ -1819,6 +1819,8 @@ class PageCanvas(QWidget):
     def _rebuild_xlink_groups(self):
         """Rebuild xlink_groups (for display) from axis_link_ids"""
         self.xlink_mgr._rebuild_groups()
+        # Update backward compatibility references
+        self.axis_link_ids = self.xlink_mgr.axis_link_ids
         self.xlink_groups = self.xlink_mgr.xlink_groups
 
     def create_xlink_group(self, ax_indices, link_id=None):
@@ -1827,6 +1829,8 @@ class PageCanvas(QWidget):
             return
 
         link_id = self.xlink_mgr.create_group(ax_indices, link_id)
+        # Update backward compatibility reference
+        self.axis_link_ids = self.xlink_mgr.axis_link_ids
         self.xlink_groups = self.xlink_mgr.xlink_groups
 
         base_lim = self.axes[ax_indices[0]].get_xlim()
@@ -1945,6 +1949,68 @@ class PageCanvas(QWidget):
         if dlg.exec():
             self.legend_mgr.set_config(idx, dlg.get_config())
             self.add_legend()
+
+    def autoscale_axis(self, ax_idx, axis_dir='both'):
+        """
+        Apply AutoScale to all traces on a specific axis and update trace records.
+        
+        This method is called after loading data to:
+        1. Calculate appropriate axis limits from all traces on the axis
+        2. Populate ax_xmin/ax_xmax/ax_ymin/ax_ymax fields in each trace record
+        3. Apply the calculated limits to the matplotlib axes
+        
+        Behavior for multiple data sources:
+        - Handles multiple traces from different files with same or different labels
+        - Calculates limits that encompass ALL traces on the axis
+        - Applies the same limits to all traces on the axis (they share the same axis)
+        - Respects x_factor/x_offset/y_factor/y_offset transformations
+        - Automatically handles twin axes (right-side y-axis)
+        
+        Args:
+            ax_idx (int): Index of the axis to autoscale
+            axis_dir (str): 'x', 'y', or 'both' (default: 'both')
+        
+        Returns:
+            None
+        """
+        # Get all traces on this axis (may come from multiple data sources)
+        traces_on_axis = [t for t in self.traces.values() if t['ax_idx'] == ax_idx]
+        
+        if not traces_on_axis:
+            return
+        
+        # Calculate X limits using all traces on this axis
+        if axis_dir in ['x', 'both']:
+            x_limits = AutoscaleCalculator.calculate_limits(traces_on_axis, 'x')
+            if x_limits:
+                # Update all traces on this axis with the same X limits
+                for t in traces_on_axis:
+                    t['ax_xmin'] = x_limits[0]
+                    t['ax_xmax'] = x_limits[1]
+        
+        # Calculate Y limits using all traces on this axis
+        if axis_dir in ['y', 'both']:
+            y_limits = AutoscaleCalculator.calculate_limits(traces_on_axis, 'y')
+            if y_limits:
+                # Update all traces on this axis with the same Y limits
+                for t in traces_on_axis:
+                    t['ax_ymin'] = y_limits[0]
+                    t['ax_ymax'] = y_limits[1]
+        
+        # Apply limits to the actual matplotlib axes
+        ax = self.axes[ax_idx]
+        if axis_dir in ['x', 'both'] and x_limits:
+            ax.set_xlim(x_limits)
+        if axis_dir in ['y', 'both'] and y_limits:
+            ax.set_ylim(y_limits)
+        
+        # Also apply to right-side axis (twin axis) if it exists
+        if ax in self.twins:
+            twin_ax = self.twins[ax]
+            if axis_dir in ['y', 'both'] and y_limits:
+                twin_ax.set_ylim(y_limits)
+        
+        self.canvas.draw()
 
     def add_legend(self):
         """Apply legend settings to all axes"""
@@ -2784,6 +2850,14 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             except Exception:
                 xd_t = ds_target.coords['index'].values
             pg.add_trace(xd_t, ds_target[var].values, var, u, fname, var, xk, xl, ax_idx)
+        
+        # Execute AutoScale on the target axis after loading all data
+        # This ensures:
+        # 1. When multiple traces from different files are loaded to same axis,
+        #    AutoScale calculates limits encompassing all traces
+        # 2. Each trace record is populated with ax_xmin/ax_xmax/ax_ymin/ax_ymax
+        # 3. The matplotlib axis displays correctly scaled view
+        pg.autoscale_axis(ax_idx, axis_dir='both')
 
     def exchange_data(self, old, new_p, parent=None):
         # Import the new file using ImportManager
