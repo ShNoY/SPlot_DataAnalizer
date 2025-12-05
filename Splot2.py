@@ -931,37 +931,18 @@ class DiagramSettingsDialog(QDialog):
 # ==========================================
 # 2. Data Manager (Name = Graph Title, Y-Label = Axis Label)
 # ==========================================
-class DataManagerDialog(QDialog):
-    """
-    Data Manager
-
-    - Tab 1: Data Files (file list / replace / remove / batch style)
-    - Tab 2: Dataset List (all traces)
-        * Name      : trace["label"]  (graph title / legend name)
-        * Y-Label   : trace["ax_ylabel"]
-        * X-Label   : trace["ax_xlabel"]
-        * Y-Side    : "left" or "right"
-        * X/Y-Fac   : trace["x_factor"], trace["y_factor"]
-        * X/Y-Off   : trace["x_offset"], trace["y_offset"]
-        * X-Link    : group ID from PageCanvas.axis_link_ids
-    """
-
-    def __init__(self, main_window: "SPlotApp"):
-        super().__init__(main_window)
+# ==========================================
+# Data Manager - Files Tab
+# ==========================================
+class DataFilesTab(QWidget):
+    """Data Files tab for DataManagerDialog"""
+    
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
         self.mw = main_window
-
-        self.setWindowTitle("Data Manager")
-        self.resize(1200, 600)
-
-        root = QVBoxLayout(self)
-        tabs = QTabWidget()
-        root.addWidget(tabs)
-
-        # ------------------------------------------------------------------
-        # Tab 1: Data Files
-        # ------------------------------------------------------------------
-        tab_files = QWidget()
-        lf = QVBoxLayout(tab_files)
+        self.parent_dialog = parent
+        
+        layout = QVBoxLayout(self)
 
         self.file_tbl = QTableWidget(0, 4)
         self.file_tbl.setHorizontalHeaderLabels(
@@ -976,7 +957,7 @@ class DataManagerDialog(QDialog):
         self.file_tbl.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
-        lf.addWidget(self.file_tbl)
+        layout.addWidget(self.file_tbl)
 
         hb1 = QHBoxLayout()
         btn_set_rep = QPushButton("Replace File...")
@@ -990,93 +971,8 @@ class DataManagerDialog(QDialog):
         hb1.addWidget(btn_rm_file)
         hb1.addStretch()
         hb1.addWidget(btn_batch_sty)
-        lf.addLayout(hb1)
-
-        tabs.addTab(tab_files, "Data Files")
-
-        # ------------------------------------------------------------------
-        # Tab 2: Dataset List
-        # ------------------------------------------------------------------
-        tab_ds = QWidget()
-        lt = QVBoxLayout(tab_ds)
-
-        # Filter (All / Active Page)
-        hf_filter = QHBoxLayout()
-        hf_filter.addWidget(QLabel("Show:"))
-        self.rb_all = QRadioButton("All Graphs")
-        self.rb_all.setChecked(True)
-        self.rb_act = QRadioButton("Active Graph Page")
-        self.bg = QButtonGroup()
-        self.bg.addButton(self.rb_all)
-        self.bg.addButton(self.rb_act)
-        self.rb_all.toggled.connect(self.refresh_traces)
-        self.rb_act.toggled.connect(self.refresh_traces)
-        hf_filter.addWidget(self.rb_all)
-        hf_filter.addWidget(self.rb_act)
-        hf_filter.addStretch()
-        lt.addLayout(hf_filter)
-
-        cols = [
-            "Page", "Diagram",
-            "Name", "Unit",
-            "File", "X-Axis", "Color",
-            "Y-Side", "Y-Label",
-            "Y-Scale", "Y-Min", "Y-Max",
-            "X-Label", "X-Min", "X-Max",
-            "X-Fac", "X-Off", "Y-Fac", "Y-Off",
-            "X-Link",
-        ]
-        self.tr_tbl = QTableWidget(0, len(cols))
-        self.tr_tbl.setHorizontalHeaderLabels(cols)
-        self.tr_tbl.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch
-        )
-        self.tr_tbl.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.tr_tbl.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
-        self.tr_tbl.setSortingEnabled(True)
-        lt.addWidget(self.tr_tbl)
-
-        hb2 = QHBoxLayout()
-        btn_xlink = QPushButton("X-Link Selected")
-        btn_xlink.clicked.connect(self.xlink_selected)
-        btn_unlink = QPushButton("Unlink Selected")
-        btn_unlink.clicked.connect(self.unlink_selected)
-        btn_autoscale_x = QPushButton("Autoscale X")
-        btn_autoscale_x.clicked.connect(self.autoscale_selected_x)
-        btn_autoscale_y = QPushButton("Autoscale Y")
-        btn_autoscale_y.clicked.connect(self.autoscale_selected_y)
-        btn_ed_tr = QPushButton("Edit Selected...")
-        btn_ed_tr.clicked.connect(self.edit_selected_traces)
-        btn_dl_tr = QPushButton("Delete Selected")
-        btn_dl_tr.clicked.connect(self.delete_selected_traces)
-
-        hb2.addWidget(btn_xlink)
-        hb2.addWidget(btn_unlink)
-        hb2.addWidget(btn_autoscale_x)
-        hb2.addWidget(btn_autoscale_y)
-        hb2.addStretch()
-        hb2.addWidget(btn_ed_tr)
-        hb2.addWidget(btn_dl_tr)
-        lt.addLayout(hb2)
-
-        tabs.addTab(tab_ds, "Dataset List")
-
-        # Close button
-        btn_cls = QPushButton("Close")
-        btn_cls.clicked.connect(self.accept)
-        root.addWidget(btn_cls, 0, Qt.AlignmentFlag.AlignRight)
-
-        # Initial fill
-        self.refresh_files()
-        self.refresh_traces()
-
-    # ------------------------------------------------------------------
-    # Tab1: files
-    # ------------------------------------------------------------------
+        layout.addLayout(hb1)
+    
     def refresh_files(self):
         self.file_tbl.setSortingEnabled(False)
         self.file_tbl.setRowCount(0)
@@ -1143,7 +1039,8 @@ class DataManagerDialog(QDialog):
         
         QMessageBox.information(self, "Success", "File(s) replaced.")
         self.refresh_files()
-        self.refresh_traces()
+        if self.parent_dialog:
+            self.parent_dialog.refresh_traces()
 
     def remove_file(self):
         rows = self.file_tbl.selectionModel().selectedRows()
@@ -1153,7 +1050,8 @@ class DataManagerDialog(QDialog):
             fname = self.file_tbl.item(r.row(), 1).text()
             self.mw.remove_file(fname)
         self.refresh_files()
-        self.refresh_traces()
+        if self.parent_dialog:
+            self.parent_dialog.refresh_traces()
 
     def edit_traces_by_file(self):
         rows = self.file_tbl.selectionModel().selectedRows()
@@ -1212,113 +1110,161 @@ class DataManagerDialog(QDialog):
             QMessageBox.information(
                 self, "Done", f"Updated {cnt} traces linked to {fname}."
             )
-            self.refresh_traces()
+            if self.parent_dialog:
+                self.parent_dialog.refresh_traces()
 
-    # ------------------------------------------------------------------
-    # Tab2: traces
-    # ------------------------------------------------------------------
+
+# ==========================================
+# Helper class for numeric sorting in tables
+# ==========================================
+class NumItem(QTableWidgetItem):
+    """QTableWidgetItem that sorts numerically instead of lexicographically"""
+    def __lt__(self, other):
+        try:
+            return float(self.text()) < float(other.text())
+        except Exception:
+            return False
+
+
+# ==========================================
+# Data Manager - Dataset Tab
+# ==========================================
+class DatasetTab(QWidget):
+    """Dataset List tab for DataManagerDialog"""
+    
+    def __init__(self, main_window, parent=None):
+        super().__init__(parent)
+        self.mw = main_window
+        self.parent_dialog = parent
+        
+        layout = QVBoxLayout(self)
+
+        # Filter (All / Active Page)
+        hf_filter = QHBoxLayout()
+        hf_filter.addWidget(QLabel("Show:"))
+        self.rb_all = QRadioButton("All Graphs")
+        self.rb_all.setChecked(True)
+        self.rb_act = QRadioButton("Active Graph Page")
+        self.bg = QButtonGroup()
+        self.bg.addButton(self.rb_all)
+        self.bg.addButton(self.rb_act)
+        self.rb_all.toggled.connect(self.refresh_traces)
+        self.rb_act.toggled.connect(self.refresh_traces)
+        hf_filter.addWidget(self.rb_all)
+        hf_filter.addWidget(self.rb_act)
+        hf_filter.addStretch()
+        layout.addLayout(hf_filter)
+
+        cols = [
+            "Page", "Diagram",
+            "Name", "Unit",
+            "File", "X-Axis", "Color",
+            "Y-Side", "Y-Label",
+            "Y-Scale", "Y-Min", "Y-Max",
+            "X-Label", "X-Min", "X-Max",
+            "X-Fac", "X-Off", "Y-Fac", "Y-Off",
+            "X-Link",
+        ]
+        self.tr_tbl = QTableWidget(0, len(cols))
+        self.tr_tbl.setHorizontalHeaderLabels(cols)
+        self.tr_tbl.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Stretch
+        )
+        self.tr_tbl.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.tr_tbl.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self.tr_tbl.setSortingEnabled(True)
+        layout.addWidget(self.tr_tbl)
+
+        hb2 = QHBoxLayout()
+        btn_xlink = QPushButton("X-Link Selected")
+        btn_xlink.clicked.connect(self.xlink_selected)
+        btn_unlink = QPushButton("Unlink Selected")
+        btn_unlink.clicked.connect(self.unlink_selected)
+        btn_autoscale_x = QPushButton("Autoscale X")
+        btn_autoscale_x.clicked.connect(self.autoscale_selected_x)
+        btn_autoscale_y = QPushButton("Autoscale Y")
+        btn_autoscale_y.clicked.connect(self.autoscale_selected_y)
+        btn_ed_tr = QPushButton("Edit Selected...")
+        btn_ed_tr.clicked.connect(self.edit_selected_traces)
+        btn_dl_tr = QPushButton("Delete Selected")
+        btn_dl_tr.clicked.connect(self.delete_selected_traces)
+
+        hb2.addWidget(btn_xlink)
+        hb2.addWidget(btn_unlink)
+        hb2.addWidget(btn_autoscale_x)
+        hb2.addWidget(btn_autoscale_y)
+        hb2.addStretch()
+        hb2.addWidget(btn_ed_tr)
+        hb2.addWidget(btn_dl_tr)
+        layout.addLayout(hb2)
+    
     def refresh_traces(self):
         self.tr_tbl.setSortingEnabled(False)
         self.tr_tbl.setRowCount(0)
 
-        show_all = self.rb_all.isChecked()
-        curr_pg = self.mw.tab_widget.currentWidget()
-
-        class NumItem(QTableWidgetItem):
-            def __lt__(self, other):
-                try:
-                    return float(self.text()) < float(other.text())
-                except Exception:
-                    return False
-
-        # ---- global X-Link group map (cross-page) ----
-        global_link_map: dict[str, int] = {}
-        next_gid = 1
+        # Global mapping of link_id -> group display string
+        global_link_map = {}
         for i in range(self.mw.tab_widget.count()):
             pg = self.mw.tab_widget.widget(i)
-            if not isinstance(pg, PageCanvas):
-                continue
-            for link_id in pg.axis_link_ids.values():
-                if link_id not in global_link_map:
-                    global_link_map[link_id] = next_gid
-                    next_gid += 1
+            if isinstance(pg, PageCanvas):
+                for ax_idx, lid in pg.axis_link_ids.items():
+                    if lid not in global_link_map:
+                        global_link_map[lid] = f"G{len(global_link_map) + 1}"
 
-        # ---- fill table ----
-        for i in range(self.mw.tab_widget.count()):
-            pg = self.mw.tab_widget.widget(i)
-            if not isinstance(pg, PageCanvas):
-                continue
-            if (not show_all) and (pg is not curr_pg):
-                continue
+        if self.rb_all.isChecked():
+            pages = [self.mw.tab_widget.widget(i) for i in range(self.mw.tab_widget.count())
+                    if isinstance(self.mw.tab_widget.widget(i), PageCanvas)]
+        else:
+            pg = self.mw.tab_widget.currentWidget()
+            pages = [pg] if isinstance(pg, PageCanvas) else []
 
-            page_name = self.mw.tab_widget.tabText(i)
+        for p_idx, pg in enumerate(pages):
+            page_name = self.mw.tab_widget.tabText(p_idx)
+            for ax_idx, ax in enumerate(pg.axes):
+                for tid, t in pg.traces.items():
+                    if t['ax_idx'] != ax_idx:
+                        continue
 
-            for tid, t in pg.traces.items():
-                row = self.tr_tbl.rowCount()
-                self.tr_tbl.insertRow(row)
+                    row = self.tr_tbl.rowCount()
+                    self.tr_tbl.insertRow(row)
 
-                # Page (store (pg, tid) in UserRole)
-                it = QTableWidgetItem(page_name)
-                it.setData(Qt.ItemDataRole.UserRole, (pg, tid))
-                self.tr_tbl.setItem(row, 0, it)
+                    self.tr_tbl.setItem(row, 0, QTableWidgetItem(page_name))
+                    self.tr_tbl.setItem(row, 1, QTableWidgetItem(str(ax_idx)))
+                    self.tr_tbl.setItem(row, 2, QTableWidgetItem(t['label']))
+                    self.tr_tbl.setItem(row, 3, QTableWidgetItem(t.get('unit', '')))
+                    self.tr_tbl.setItem(row, 4, QTableWidgetItem(t['file']))
+                    self.tr_tbl.setItem(row, 5, QTableWidgetItem(t.get('x_key', 'index')))
 
-                # Diagram index (1-based)
-                self.tr_tbl.setItem(row, 1, QTableWidgetItem(str(t["ax_idx"] + 1)))
+                    col_item = QTableWidgetItem("")
+                    col_item.setBackground(QColor(t.get('color', '#000000')))
+                    self.tr_tbl.setItem(row, 6, col_item)
 
-                # Name / Unit / File / X-Axis
-                name_val = t.get("label", "") or ""
-                unit_val = t.get("unit", "") or ""
-                self.tr_tbl.setItem(row, 2, QTableWidgetItem(name_val))
-                self.tr_tbl.setItem(row, 3, QTableWidgetItem(unit_val))
-                self.tr_tbl.setItem(row, 4, QTableWidgetItem(t["file"]))
-                self.tr_tbl.setItem(row, 5, QTableWidgetItem(t["x_key"]))
+                    self.tr_tbl.setItem(row, 7, QTableWidgetItem(t.get('yaxis', 'left')))
+                    self.tr_tbl.setItem(row, 8, QTableWidgetItem(t.get('ax_ylabel', '')))
+                    self.tr_tbl.setItem(row, 9, QTableWidgetItem(t.get('yscale', 'linear')))
+                    self.tr_tbl.setItem(row, 10, QTableWidgetItem(str(t.get('ax_ymin', ''))))
+                    self.tr_tbl.setItem(row, 11, QTableWidgetItem(str(t.get('ax_ymax', ''))))
+                    self.tr_tbl.setItem(row, 12, QTableWidgetItem(t.get('ax_xlabel', '')))
+                    self.tr_tbl.setItem(row, 13, QTableWidgetItem(str(t.get('ax_xmin', ''))))
+                    self.tr_tbl.setItem(row, 14, QTableWidgetItem(str(t.get('ax_xmax', ''))))
+                    self.tr_tbl.setItem(row, 15, NumItem(str(t.get('x_factor', 1.0))))
+                    self.tr_tbl.setItem(row, 16, NumItem(str(t.get('x_offset', 0.0))))
+                    self.tr_tbl.setItem(row, 17, NumItem(str(t.get('y_factor', 1.0))))
+                    self.tr_tbl.setItem(row, 18, NumItem(str(t.get('y_offset', 0.0))))
 
-                # Color
-                ci = QTableWidgetItem("")
-                ci.setBackground(QColor(t["color"]))
-                self.tr_tbl.setItem(row, 6, ci)
+                    lid = pg.axis_link_ids.get(t["ax_idx"])
+                    if lid is None:
+                        grp = "-"
+                    else:
+                        grp = str(global_link_map.get(lid, "-"))
+                    self.tr_tbl.setItem(row, 19, QTableWidgetItem(grp))
 
-                # Y side
-                side = t.get("yaxis", "left")
-                self.tr_tbl.setItem(row, 7, QTableWidgetItem(side))
-
-                # Axis objects
-                ax = pg.axes[t["ax_idx"]]
-                ax_r = pg.twins.get(ax)
-
-                # --- Y-Label : show only from database (ax_ylabel) ---
-                y_label = t.get("ax_ylabel", "")
-
-                # Y-scale & range
-                target_ax = ax_r if side == "right" and ax_r is not None else ax
-                yscale = target_ax.get_yscale()
-                ylim = target_ax.get_ylim()
-
-                self.tr_tbl.setItem(row, 8,  QTableWidgetItem(y_label))
-                self.tr_tbl.setItem(row, 9,  QTableWidgetItem(yscale))
-                self.tr_tbl.setItem(row, 10, NumItem(f"{ylim[0]:.6g}"))
-                self.tr_tbl.setItem(row, 11, NumItem(f"{ylim[1]:.6g}"))
-
-                # X-Label & range (also DB values only)
-                x_label = t.get("ax_xlabel", "")
-                xlim = ax.get_xlim()
-                self.tr_tbl.setItem(row, 12, QTableWidgetItem(x_label))
-                self.tr_tbl.setItem(row, 13, NumItem(f"{xlim[0]:.6g}"))
-                self.tr_tbl.setItem(row, 14, NumItem(f"{xlim[1]:.6g}"))
-
-                # Factors / Offsets
-                self.tr_tbl.setItem(row, 15, NumItem(str(t.get("x_factor", 1.0))))
-                self.tr_tbl.setItem(row, 16, NumItem(str(t.get("x_offset", 0.0))))
-                self.tr_tbl.setItem(row, 17, NumItem(str(t.get("y_factor", 1.0))))
-                self.tr_tbl.setItem(row, 18, NumItem(str(t.get("y_offset", 0.0))))
-
-                # X-Link group
-                lid = pg.axis_link_ids.get(t["ax_idx"])
-                if lid is None:
-                    grp = "-"
-                else:
-                    grp = str(global_link_map.get(lid, "-"))
-                self.tr_tbl.setItem(row, 19, QTableWidgetItem(grp))
+                    # Store (pg, tid) in first cell's UserRole for later retrieval
+                    self.tr_tbl.item(row, 0).setData(Qt.ItemDataRole.UserRole, (pg, tid))
 
         self.tr_tbl.setSortingEnabled(True)
 
@@ -1335,6 +1281,65 @@ class DataManagerDialog(QDialog):
                 continue
             result.append(data)
         return result
+
+    def xlink_selected(self):
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+
+        import uuid
+        link_id = str(uuid.uuid4())[:8]
+
+        for pg, tid in sel:
+            t = pg.traces.get(tid)
+            if t:
+                ax_idx = t['ax_idx']
+                pg.create_xlink_group([ax_idx], link_id)
+
+        QMessageBox.information(self, "X-Link", "Selected traces linked.")
+        self.refresh_traces()
+
+    def unlink_selected(self):
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+
+        for pg, tid in sel:
+            t = pg.traces.get(tid)
+            if t:
+                ax_idx = t['ax_idx']
+                pg.remove_from_xlink(ax_idx)
+
+        QMessageBox.information(self, "Unlink", "Selected traces unlinked.")
+        self.refresh_traces()
+
+    def autoscale_selected_x(self):
+        """Apply autoscale to X-axis for each selected trace individually."""
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+        
+        for pg, tid in sel:
+            t = pg.traces[tid]
+            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'x')
+            if limits:
+                pg.update_trace(tid, {'ax_xmin': limits[0], 'ax_xmax': limits[1]})
+        
+        self.refresh_traces()
+
+    def autoscale_selected_y(self):
+        """Apply autoscale to Y-axis for each selected trace individually."""
+        sel = self._selected_trace_rows()
+        if not sel:
+            return
+        
+        for pg, tid in sel:
+            t = pg.traces[tid]
+            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'y')
+            if limits:
+                pg.update_trace(tid, {'ax_ymin': limits[0], 'ax_ymax': limits[1]})
+        
+        self.refresh_traces()
 
     def edit_selected_traces(self):
         sel = self._selected_trace_rows()
@@ -1369,94 +1374,71 @@ class DataManagerDialog(QDialog):
             trace_list.append(t)
         
         dlg = TraceSettingsDialog(trace_list, self, available_vars=available_vars)
-        if not dlg.exec():
-            return
-        settings = dlg.get_data()
-
-        for pg, tid in sel:
-            pg.update_trace(tid, settings)
-            pg.canvas.draw_idle()
-
-        self.refresh_traces()
-
-    def xlink_selected(self):
-        from PyQt6.QtWidgets import QMessageBox
-        import uuid
-
-        sel = self._selected_trace_rows()
-        if not sel:
-            return
-
-        # Aggregate X-axis indices per page
-        page_axes: dict[PageCanvas, set[int]] = {}
-        for pg, tid in sel:
-            ax_idx = pg.traces[tid]["ax_idx"]
-            page_axes.setdefault(pg, set()).add(ax_idx)
-
-        total_axes = sum(len(s) for s in page_axes.values())
-        if total_axes < 2:
-            QMessageBox.information(
-                self,
-                "X-Link",
-                "Please select at least two graphs to create an X-Link.",
-            )
-            return
-
-        link_id = str(uuid.uuid4())[:8]
-        for pg, ax_set in page_axes.items():
-            pg.create_xlink_group(list(ax_set), link_id=link_id)
-
-        QMessageBox.information(
-            self,
-            "X-Link",
-            "X axes of the selected graphs have been linked (cross-page supported).",
-        )
-        self.refresh_traces()
-
-    def unlink_selected(self):
-        sel = self._selected_trace_rows()
-        if not sel:
-            return
-        for pg, tid in sel:
-            ax_idx = pg.traces[tid]["ax_idx"]
-            pg.remove_from_xlink(ax_idx)
-        self.refresh_traces()
+        if dlg.exec():
+            settings = dlg.get_data()
+            for pg, tid in sel:
+                pg.update_trace(tid, settings)
+            self.refresh_traces()
 
     def delete_selected_traces(self):
         sel = self._selected_trace_rows()
         if not sel:
             return
+
+        reply = QMessageBox.question(
+            self, "Confirm", f"Delete {len(sel)} trace(s)?"
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
         for pg, tid in sel:
             pg.remove_trace(tid)
+
         self.refresh_traces()
 
-    def autoscale_selected_x(self):
-        """Apply autoscale to X-axis for each selected trace individually."""
-        sel = self._selected_trace_rows()
-        if not sel:
-            return
-        
-        for pg, tid in sel:
-            t = pg.traces[tid]
-            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'x')
-            if limits:
-                pg.update_trace(tid, {'ax_xmin': limits[0], 'ax_xmax': limits[1]})
-        
+
+# ==========================================
+# Data Manager Dialog (Main)
+# ==========================================
+class DataManagerDialog(QDialog):
+    """
+    Data Manager
+    - Tab 1: Data Files (file list / replace / remove / batch style)
+    - Tab 2: Dataset List (all traces)
+    """
+
+    def __init__(self, main_window: "SPlotApp"):
+        super().__init__(main_window)
+        self.mw = main_window
+
+        self.setWindowTitle("Data Manager")
+        self.resize(1200, 600)
+
+        root = QVBoxLayout(self)
+        tabs = QTabWidget()
+        root.addWidget(tabs)
+
+        # Create tab instances
+        self.files_tab = DataFilesTab(self.mw, self)
+        self.dataset_tab = DatasetTab(self.mw, self)
+
+        tabs.addTab(self.files_tab, "Data Files")
+        tabs.addTab(self.dataset_tab, "Dataset List")
+
+        # Close button
+        btn_cls = QPushButton("Close")
+        btn_cls.clicked.connect(self.accept)
+        root.addWidget(btn_cls, 0, Qt.AlignmentFlag.AlignRight)
+
+        # Initial fill
+        self.refresh_files()
         self.refresh_traces()
 
-    def autoscale_selected_y(self):
-        """Apply autoscale to Y-axis for each selected trace individually."""
-        sel = self._selected_trace_rows()
-        if not sel:
-            return
-        
-        for pg, tid in sel:
-            t = pg.traces[tid]
-            limits = PageCanvas.calculate_nice_autoscale_limits([t], 'y')
-            if limits:
-                pg.update_trace(tid, {'ax_ymin': limits[0], 'ax_ymax': limits[1]})
-        
-        self.refresh_traces()
+    def refresh_files(self):
+        self.files_tab.refresh_files()
+
+    def refresh_traces(self):
+        self.dataset_tab.refresh_traces()
 
 
 # ==========================================
