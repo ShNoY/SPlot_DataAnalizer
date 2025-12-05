@@ -738,7 +738,7 @@ class TraceAxisTab(QWidget):
             )
             return
         
-        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'x')
+        limits = AutoscaleCalculator.calculate_limits(self.traces.values(), 'x')
         if limits:
             self.ax_xmin.setText(str(limits[0]))
             self.ax_xmax.setText(str(limits[1]))
@@ -758,7 +758,7 @@ class TraceAxisTab(QWidget):
             )
             return
         
-        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'y')
+        limits = AutoscaleCalculator.calculate_limits(self.traces.values(), 'y')
         if limits:
             self.ax_ymin.setText(str(limits[0]))
             self.ax_ymax.setText(str(limits[1]))
@@ -1857,9 +1857,6 @@ class PageCanvas(QWidget):
         self.global_xlim_changed.emit(link_id, xlim[0], xlim[1])
 
     @staticmethod
-    def calculate_nice_autoscale_limits(traces_list, axis_dir='x'):
-        """Calculate nice autoscale limits (delegates to AutoscaleCalculator)"""
-        return AutoscaleCalculator.calculate_limits(traces_list, axis_dir)
 
     def apply_global_xlim(self, link_id, xmin, xmax):
         if self._updating_xlim:
