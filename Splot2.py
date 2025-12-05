@@ -797,7 +797,9 @@ class TraceAxisTab(QWidget):
             )
             return
         
-        limits = AutoscaleCalculator.calculate_limits(self.traces.values(), 'x')
+        # Handle both list and dict types for self.traces
+        traces_data = self.traces.values() if isinstance(self.traces, dict) else self.traces
+        limits = AutoscaleCalculator.calculate_limits(traces_data, 'x')
         if limits:
             self.ax_xmin.setText(str(limits[0]))
             self.ax_xmax.setText(str(limits[1]))
@@ -817,7 +819,9 @@ class TraceAxisTab(QWidget):
             )
             return
         
-        limits = AutoscaleCalculator.calculate_limits(self.traces.values(), 'y')
+        # Handle both list and dict types for self.traces
+        traces_data = self.traces.values() if isinstance(self.traces, dict) else self.traces
+        limits = AutoscaleCalculator.calculate_limits(traces_data, 'y')
         if limits:
             self.ax_ymin.setText(str(limits[0]))
             self.ax_ymax.setText(str(limits[1]))
