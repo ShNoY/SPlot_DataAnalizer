@@ -1741,8 +1741,17 @@ class PageCanvas(QWidget):
             'window_size': win,
             'ax_xlabel': ax_xlab,
             'ax_ylabel': ax_ylab,
+            'ax_xmin': None,
+            'ax_xmax': None,
+            'ax_ymin': None,
+            'ax_ymax': None,
             'yaxis': side,
-            'yscale': scale
+            'yscale': scale,
+            'marker': 'None',
+            'markersize': 2.0,
+            'marker_face_color': '#1f77b4',
+            'marker_edge_color': '#1f77b4',
+            'linestyle': '-'
         }
 
         if any([xf != 1, xo != 0, yf != 1, yo != 0, trans != 'None']):
@@ -1795,6 +1804,28 @@ class PageCanvas(QWidget):
             t['ax_ylabel'] = s['ax_ylabel']
         if 'yscale' in s:
             req_ax.set_yscale(s['yscale'])
+        
+        # Handle axis limits
+        if 'ax_xmin' in s and s['ax_xmin'] is not None:
+            xmin = s['ax_xmin']
+            xmax = primary.get_xlim()[1]
+            primary.set_xlim(xmin, xmax)
+            t['ax_xmin'] = s['ax_xmin']
+        if 'ax_xmax' in s and s['ax_xmax'] is not None:
+            xmin = primary.get_xlim()[0]
+            xmax = s['ax_xmax']
+            primary.set_xlim(xmin, xmax)
+            t['ax_xmax'] = s['ax_xmax']
+        if 'ax_ymin' in s and s['ax_ymin'] is not None:
+            ymin = s['ax_ymin']
+            ymax = req_ax.get_ylim()[1]
+            req_ax.set_ylim(ymin, ymax)
+            t['ax_ymin'] = s['ax_ymin']
+        if 'ax_ymax' in s and s['ax_ymax'] is not None:
+            ymin = req_ax.get_ylim()[0]
+            ymax = s['ax_ymax']
+            req_ax.set_ylim(ymin, ymax)
+            t['ax_ymax'] = s['ax_ymax']
 
         # Handle X-axis reference change
         if 'x_key' in s:

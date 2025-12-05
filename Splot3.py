@@ -88,16 +88,34 @@ class FormulaEditDialog(QDialog):
 
     def copy_var(self, item):
         txt = item.text()
-        self.expr_edit.insert(txt)
+        # Extract the clean variable name (before the bracket part)
+        # Format: "ダイナモトルク[P]" or "Variable (ダイナモトルク[P])"
+        if ' (' in txt and ')' in txt:
+            # Format: "clean_name (original_name)"
+            clean_name = txt.split(' (')[0]
+        else:
+            # Fallback: use the name as-is
+            clean_name = txt
+        
+        self.expr_edit.insert(clean_name)
         self.expr_edit.setFocus()
 
     def populate_var_list(self, vars_to_show):
         """Populate the variable list table with given variables."""
         self.var_list.setRowCount(0)
         for v in vars_to_show:
+            # Extract clean name (before bracket)
+            clean_name = v.split('[')[0] if '[' in v else v
+            
+            # Display format: show clean name, but also original name if different
+            if clean_name != v:
+                display_text = f"{clean_name} ({v})"
+            else:
+                display_text = v
+            
             r = self.var_list.rowCount()
             self.var_list.insertRow(r)
-            self.var_list.setItem(r, 0, QTableWidgetItem(v))
+            self.var_list.setItem(r, 0, QTableWidgetItem(display_text))
 
     def filter_variables(self, text):
         """Filter variables based on search text (case-insensitive)."""
@@ -352,6 +370,16 @@ class SPlotWithMath(Splot2.SPlotApp):
         fdata = self.file_data_map[fname]
         ds = fdata['ds']
 
+        # Create mapping from original names to cleaned names
+        # e.g., "ダイナモトルク[P]" -> "var_0", "温度[°C]" -> "var_1"
+        name_mapping = {}  # original_name -> clean_var_name
+        clean_to_original = {}  # clean_var_name -> original_name
+        
+        for i, var_name in enumerate(ds.data_vars):
+            clean_var_name = f"var_{i}" if '[' in var_name else var_name
+            name_mapping[var_name] = clean_var_name
+            clean_to_original[clean_var_name] = var_name
+
         context = {
             'np': np,
             'pd': pd,
@@ -360,8 +388,14 @@ class SPlotWithMath(Splot2.SPlotApp):
             'max': max
         }
         
+        # Add variables to context with both clean and original names
         for var_name in ds.data_vars:
-            context[var_name] = ds[var_name].values
+            clean_name = name_mapping[var_name]
+            context[clean_name] = ds[var_name].values
+            # Also add the original name without brackets for convenience
+            base_name = var_name.split('[')[0] if '[' in var_name else var_name
+            if base_name != clean_name:
+                context[base_name] = ds[var_name].values
 
         calc_count = 0
         
@@ -371,8 +405,18 @@ class SPlotWithMath(Splot2.SPlotApp):
             unit = f['unit']
             
             try:
+                # Normalize expression: replace original names with clean names
+                normalized_expr = expr
+                for original_name in sorted(name_mapping.keys(), key=len, reverse=True):
+                    clean_name = name_mapping[original_name]
+                    # Replace exact variable names (with word boundary consideration)
+                    # e.g., "ダイナモトルク[P]" -> "var_0"
+                    normalized_expr = normalized_expr.replace(original_name, clean_name)
+                
+                print(f"[DEBUG] Expression: {expr} -> {normalized_expr}")
+                
                 # 数式評価
-                result = eval(expr, {"__builtins__": {}}, context)
+                result = eval(normalized_expr, {"__builtins__": {}}, context)
                 
                 if isinstance(result, (int, float)):
                     result = np.full_like(ds.coords['index'].values, result, dtype=float)
@@ -392,6 +436,8 @@ class SPlotWithMath(Splot2.SPlotApp):
                 
             except Exception as e:
                 print(f"Error calculating '{name}': {e}")
+                import traceback
+                traceback.print_exc()
                 continue
 
         return calc_count
