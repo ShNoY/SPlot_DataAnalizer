@@ -230,8 +230,6 @@ class EncodingSelectDialog(QDialog):
         layout.addWidget(buttons)
         self.setLayout(layout)
 
-    def get_encoding(self):
-        return self.combo.currentText()
 
 class TraceSelectionDialog(CheckListDialog):
     def __init__(self, traces_list, parent=None):
@@ -1464,70 +1462,6 @@ class AxisInfo:
         self.ymin: Optional[float] = None
         self.ymax: Optional[float] = None
     
-    def apply_to_matplotlib(self):
-        """Apply stored settings to matplotlib axis"""
-        if self.xlabel:
-            self.ax.set_xlabel(self.xlabel)
-        if self.ylabel:
-            self.ax.set_ylabel(self.ylabel)
-        self.ax.set_yscale(self.yscale)
-        
-        if self.xmin is not None or self.xmax is not None:
-            xmin, xmax = self.ax.get_xlim()
-            if self.xmin is not None:
-                xmin = self.xmin
-            if self.xmax is not None:
-                xmax = self.xmax
-            self.ax.set_xlim(xmin, xmax)
-        
-        if self.ymin is not None or self.ymax is not None:
-            ymin, ymax = self.ax.get_ylim()
-            if self.ymin is not None:
-                ymin = self.ymin
-            if self.ymax is not None:
-                ymax = self.ymax
-            self.ax.set_ylim(ymin, ymax)
-    
-    def get_limits(self) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
-        """Get all axis limits as (xmin, xmax, ymin, ymax)"""
-        return self.xmin, self.xmax, self.ymin, self.ymax
-    
-    def set_limits(self, xmin=None, xmax=None, ymin=None, ymax=None):
-        """Set axis limits"""
-        if xmin is not None:
-            self.xmin = xmin
-        if xmax is not None:
-            self.xmax = xmax
-        if ymin is not None:
-            self.ymin = ymin
-        if ymax is not None:
-            self.ymax = ymax
-    
-    def to_dict(self) -> Dict:
-        """Convert to dictionary for storage/serialization"""
-        return {
-            'axis_idx': self.axis_idx,
-            'xlabel': self.xlabel,
-            'ylabel': self.ylabel,
-            'yscale': self.yscale,
-            'xmin': self.xmin,
-            'xmax': self.xmax,
-            'ymin': self.ymin,
-            'ymax': self.ymax
-        }
-    
-    @staticmethod
-    def from_dict(data: Dict, matplotlib_axis) -> 'AxisInfo':
-        """Create AxisInfo from dictionary"""
-        info = AxisInfo(data['axis_idx'], matplotlib_axis)
-        info.xlabel = data.get('xlabel', '')
-        info.ylabel = data.get('ylabel', '')
-        info.yscale = data.get('yscale', 'linear')
-        info.xmin = data.get('xmin')
-        info.xmax = data.get('xmax')
-        info.ymin = data.get('ymin')
-        info.ymax = data.get('ymax')
-        return info
 
 
 # ==========================================
@@ -2061,19 +1995,6 @@ class PageCanvas(QWidget):
         if dlg.exec():
             self.update_trace(tid, dlg.get_data())
 
-    def remove_right_axis(self, primary_ax):
-        if primary_ax not in self.twins:
-            return
-        twin = self.twins[primary_ax]
-        to_move = []
-        for tid, t in self.traces.items():
-            if self.axes[t['ax_idx']] == primary_ax and t.get('yaxis') == 'right':
-                to_move.append(tid)
-        for tid in to_move:
-            self.update_trace(tid, {'yaxis': 'left'})
-        twin.remove()
-        del self.twins[primary_ax]
-        self.canvas.draw()
 
     # =========================
     # Trace add/update/remove
@@ -2318,38 +2239,6 @@ class PageCanvas(QWidget):
             del self.traces[tid]
             self.add_legend()
             self.canvas.draw()
-
-    def get_axis_info(self, ax_idx: int) -> Optional[AxisInfo]:
-        """Get AxisInfo for a specific axis"""
-        return self.axis_info.get(ax_idx)
-    
-    def get_axis_info_dict(self, ax_idx: int) -> Dict:
-        """Get axis info as dictionary for serialization"""
-        info = self.axis_info.get(ax_idx)
-        if info:
-            return info.to_dict()
-        return {}
-    
-    def restore_axis_info(self, ax_idx: int, info_dict: Dict):
-        """Restore axis info from dictionary"""
-        if ax_idx in self.axis_info:
-            restored = AxisInfo.from_dict(info_dict, self.axes[ax_idx])
-            self.axis_info[ax_idx] = restored
-            restored.apply_to_matplotlib()
-
-    def refresh_trace_data(self, tid, file_map):
-        if tid in self.traces:
-            t = self.traces[tid]
-            fname = t['file']
-            if fname in file_map:
-                ds = file_map[fname]['ds']
-                if t['var_key'] in ds:
-                    t['raw_y'] = ds[t['var_key']].values
-                    if t['x_key'] == 'index':
-                        t['raw_x'] = ds.coords['index'].values
-                    elif t['x_key'] in ds:
-                        t['raw_x'] = ds[t['x_key']].values
-                    self.update_trace(tid, t)
 
     def reload_data(self, old_f, new_f, ds):
         cnt = 0
