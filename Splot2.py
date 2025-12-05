@@ -1625,13 +1625,20 @@ class AutoscaleCalculator:
             if 'line' not in trace:
                 continue
             
-            line = trace['line']
+            # Use raw_x/raw_y from trace dict to avoid double-application of factor
+            # The line.get_xdata()/get_ydata() returns already-transformed data from update_trace()
             if axis_dir == 'x':
-                data = line.get_xdata()
+                if 'raw_x' in trace:
+                    data = trace['raw_x']
+                else:
+                    data = trace['line'].get_xdata()
                 factor = trace.get('x_factor', 1.0)
                 offset = trace.get('x_offset', 0.0)
             else:
-                data = line.get_ydata()
+                if 'raw_y' in trace:
+                    data = trace['raw_y']
+                else:
+                    data = trace['line'].get_ydata()
                 factor = trace.get('y_factor', 1.0)
                 offset = trace.get('y_offset', 0.0)
             
@@ -2103,6 +2110,12 @@ class PageCanvas(QWidget):
 
     def update_trace(self, tid, s):
         t = self.traces[tid]
+        
+        # Track if factor/offset changed to trigger autoscale
+        factor_changed = ('x_factor' in s or 'x_offset' in s or 
+                          'y_factor' in s or 'y_offset' in s or
+                          'transform' in s)
+        
         t.update(s)
         if 'label' in s:
             t['label'] = s['label']
@@ -2220,14 +2233,17 @@ class PageCanvas(QWidget):
 
         req_ax.relim()
         
-        # Only autoscale if axis limits were not explicitly set
-        # Check BOTH the update dict (s) and the trace dict (t) for preserved limits
+        # Determine if axis limits are explicitly set
         has_xlim = ('ax_xmin' in s or 'ax_xmax' in s or 
                    (t.get('ax_xmin') is not None or t.get('ax_xmax') is not None))
         has_ylim = ('ax_ymin' in s or 'ax_ymax' in s or 
                    (t.get('ax_ymin') is not None or t.get('ax_ymax') is not None))
         
-        if not (has_xlim or has_ylim):
+        # If factor changed, re-run autoscale; otherwise use matplotlib's autoscale_view
+        if factor_changed and not (has_xlim or has_ylim):
+            # Use AutoscaleCalculator to apply proper autoscale with factor handling
+            self.autoscale_axis(ax_idx, axis_dir='both')
+        elif not (has_xlim or has_ylim):
             req_ax.autoscale_view()
         
         self.add_legend()
