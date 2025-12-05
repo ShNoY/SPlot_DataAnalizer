@@ -347,6 +347,459 @@ class NewPageDialog(QDialog):
             return 2, 2
         return self.rows.value(), self.cols.value()
 
+# ==========================================
+# Trace Settings Dialog - Style Tab
+# ==========================================
+class TraceStyleTab(QWidget):
+    """Style tab for TraceSettingsDialog (Line, Marker settings)"""
+    
+    def __init__(self, trace, parent=None):
+        super().__init__(parent)
+        self.trace = trace
+        self.modified_fields = set()
+        
+        layout = QVBoxLayout(self)
+        
+        # Line Section
+        grp_line = QGroupBox("Line")
+        fl = QFormLayout(grp_line)
+        
+        # Line style
+        self.style_combo = QComboBox()
+        self.style_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot", "None"])
+        inv_style = {'-': 0, '--': 1, ':': 2, '-.': 3, 'None': 4}
+        current_style = self.trace.get('linestyle', '-')
+        if current_style in inv_style:
+            self.style_combo.setCurrentIndex(inv_style[current_style])
+        self.style_combo.currentIndexChanged.connect(lambda: self._mark_modified('linestyle'))
+        
+        # Draw style (always "Default" for now, can be extended)
+        self.draw_style_combo = QComboBox()
+        self.draw_style_combo.addItems(["Default"])
+        self.draw_style_combo.setCurrentIndex(0)
+        
+        # Line width
+        self.width_spin = QDoubleSpinBox()
+        self.width_spin.setRange(0.1, 20)
+        self.width_spin.setValue(self.trace.get('linewidth', 1.5))
+        self.width_spin.valueChanged.connect(lambda: self._mark_modified('linewidth'))
+        
+        # Line color
+        self.color_btn = QPushButton()
+        self.color = self.trace.get('color', '#1f77b4')
+        self.color_btn.setStyleSheet(f"background-color: {self.color}")
+        self.color_btn.setFixedHeight(30)
+        self.color_btn.clicked.connect(self.pick_color)
+        
+        fl.addRow("Line style:", self.style_combo)
+        fl.addRow("Draw style:", self.draw_style_combo)
+        fl.addRow("Width:", self.width_spin)
+        fl.addRow("Color (RGBA):", self.color_btn)
+        layout.addWidget(grp_line)
+        
+        # Marker Section
+        grp_marker = QGroupBox("Marker")
+        fm = QFormLayout(grp_marker)
+        
+        # Marker style
+        self.marker_style_combo = QComboBox()
+        self.marker_style_combo.addItems(["nothing", "o", "^", "s", "+", "x", "*", "D", "v", "<", ">"])
+        marker_map = {'nothing': 0, 'o': 1, '^': 2, 's': 3, '+': 4, 'x': 5, '*': 6, 'D': 7, 'v': 8, '<': 9, '>': 10}
+        current_marker = self.trace.get('marker', 'nothing')
+        if current_marker in marker_map:
+            self.marker_style_combo.setCurrentIndex(marker_map[current_marker])
+        self.marker_style_combo.currentIndexChanged.connect(lambda: self._mark_modified('marker'))
+        
+        # Marker size
+        self.marker_size_spin = QDoubleSpinBox()
+        self.marker_size_spin.setRange(1, 100)
+        self.marker_size_spin.setValue(self.trace.get('markersize', 2.0))
+        self.marker_size_spin.valueChanged.connect(lambda: self._mark_modified('markersize'))
+        
+        # Marker face color
+        self.marker_face_color_btn = QPushButton()
+        self.marker_face_color = self.trace.get('marker_face_color', '#1f77b4')
+        self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
+        self.marker_face_color_btn.setFixedHeight(30)
+        self.marker_face_color_btn.clicked.connect(self.pick_marker_face_color)
+        
+        # Marker edge color
+        self.marker_edge_color_btn = QPushButton()
+        self.marker_edge_color = self.trace.get('marker_edge_color', '#1f77b4')
+        self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
+        self.marker_edge_color_btn.setFixedHeight(30)
+        self.marker_edge_color_btn.clicked.connect(self.pick_marker_edge_color)
+        
+        fm.addRow("Style:", self.marker_style_combo)
+        fm.addRow("Size:", self.marker_size_spin)
+        fm.addRow("Face color (RGBA):", self.marker_face_color_btn)
+        fm.addRow("Edge color (RGBA):", self.marker_edge_color_btn)
+        layout.addWidget(grp_marker)
+        layout.addStretch()
+    
+    def _mark_modified(self, field):
+        self.modified_fields.add(field)
+    
+    def pick_color(self):
+        c = QColorDialog.getColor(QColor(self.color))
+        if c.isValid():
+            self.color = c.name()
+            self.color_btn.setStyleSheet(f"background-color: {self.color}")
+            self._mark_modified('color')
+
+    def pick_marker_face_color(self):
+        c = QColorDialog.getColor(QColor(self.marker_face_color))
+        if c.isValid():
+            self.marker_face_color = c.name()
+            self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
+            self._mark_modified('marker_face_color')
+
+    def pick_marker_edge_color(self):
+        c = QColorDialog.getColor(QColor(self.marker_edge_color))
+        if c.isValid():
+            self.marker_edge_color = c.name()
+            self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
+            self._mark_modified('marker_edge_color')
+    
+    def get_data(self):
+        data = {}
+        if 'linewidth' in self.modified_fields:
+            data['linewidth'] = self.width_spin.value()
+        if 'color' in self.modified_fields:
+            data['color'] = self.color
+        if 'linestyle' in self.modified_fields:
+            style_map = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'DashDot': '-.', 'None': 'None'}
+            data['linestyle'] = style_map.get(self.style_combo.currentText(), '-')
+        if 'marker' in self.modified_fields:
+            marker_text = self.marker_style_combo.currentText()
+            data['marker'] = marker_text if marker_text != 'nothing' else 'None'
+        if 'markersize' in self.modified_fields:
+            data['markersize'] = self.marker_size_spin.value()
+        if 'marker_face_color' in self.modified_fields:
+            data['marker_face_color'] = self.marker_face_color
+        if 'marker_edge_color' in self.modified_fields:
+            data['marker_edge_color'] = self.marker_edge_color
+        return data
+
+
+# ==========================================
+# Trace Settings Dialog - Math Tab
+# ==========================================
+class TraceMathTab(QWidget):
+    """Scaling/Math tab for TraceSettingsDialog (Scaling, Transformation)"""
+    
+    def __init__(self, trace, parent=None):
+        super().__init__(parent)
+        self.trace = trace
+        self.modified_fields = set()
+        
+        layout = QVBoxLayout(self)
+        
+        grp_sc = QGroupBox("Scaling")
+        fsc = QFormLayout(grp_sc)
+        self.x_fac = QDoubleSpinBox()
+        self.x_fac.setRange(-1e6, 1e6)
+        self.x_fac.setValue(self.trace.get('x_factor', 1.0))
+        self.x_fac.valueChanged.connect(lambda: self._mark_modified('x_factor'))
+        self.x_off = QDoubleSpinBox()
+        self.x_off.setRange(-1e6, 1e6)
+        self.x_off.setValue(self.trace.get('x_offset', 0.0))
+        self.x_off.valueChanged.connect(lambda: self._mark_modified('x_offset'))
+        self.y_fac = QDoubleSpinBox()
+        self.y_fac.setRange(-1e6, 1e6)
+        self.y_fac.setValue(self.trace.get('y_factor', 1.0))
+        self.y_fac.valueChanged.connect(lambda: self._mark_modified('y_factor'))
+        self.y_off = QDoubleSpinBox()
+        self.y_off.setRange(-1e6, 1e6)
+        self.y_off.setValue(self.trace.get('y_offset', 0.0))
+        self.y_off.valueChanged.connect(lambda: self._mark_modified('y_offset'))
+        fsc.addRow("X Factor:", self.x_fac)
+        fsc.addRow("X Offset:", self.x_off)
+        fsc.addRow("Y Factor:", self.y_fac)
+        fsc.addRow("Y Offset:", self.y_off)
+        layout.addWidget(grp_sc)
+
+        grp_trans = QGroupBox("Transformation")
+        ftr = QFormLayout(grp_trans)
+        self.trans_combo = QComboBox()
+        self.trans_combo.addItems(["None", "Moving Average", "Cumulative Sum (Integral)"])
+        t_map = {'None': 0, 'mov_avg': 1, 'cumsum': 2}
+        if self.trace.get('transform') in t_map:
+            self.trans_combo.setCurrentIndex(t_map[self.trace.get('transform')])
+        self.trans_combo.currentIndexChanged.connect(lambda: self._mark_modified('transform'))
+        self.win_size = QSpinBox()
+        self.win_size.setRange(1, 10000)
+        self.win_size.setValue(self.trace.get('window_size', 5))
+        self.win_size.valueChanged.connect(lambda: self._mark_modified('window_size'))
+        ftr.addRow("Mode:", self.trans_combo)
+        ftr.addRow("Window:", self.win_size)
+        layout.addWidget(grp_trans)
+        layout.addStretch()
+    
+    def _mark_modified(self, field):
+        self.modified_fields.add(field)
+    
+    def get_data(self):
+        data = {}
+        if 'x_factor' in self.modified_fields:
+            data['x_factor'] = self.x_fac.value()
+        if 'x_offset' in self.modified_fields:
+            data['x_offset'] = self.x_off.value()
+        if 'y_factor' in self.modified_fields:
+            data['y_factor'] = self.y_fac.value()
+        if 'y_offset' in self.modified_fields:
+            data['y_offset'] = self.y_off.value()
+        if 'transform' in self.modified_fields:
+            t_txt = self.trans_combo.currentText()
+            data['transform'] = 'None' if "None" in t_txt else 'mov_avg' if "Average" in t_txt else 'cumsum'
+        if 'window_size' in self.modified_fields:
+            data['window_size'] = self.win_size.value()
+        return data
+
+
+# ==========================================
+# Trace Settings Dialog - Axis Tab
+# ==========================================
+class TraceAxisTab(QWidget):
+    """Axis tab for TraceSettingsDialog (Labels, Scale, Limits)"""
+    
+    def __init__(self, traces, available_vars=None, parent=None):
+        super().__init__(parent)
+        self.traces = traces if isinstance(traces, list) else [traces]
+        self.modified_fields = set()
+        self.available_vars = available_vars if available_vars else []
+        
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Leave blank to keep current settings."))
+        
+        # X-Axis Reference
+        grp_xref = QGroupBox("X-Axis Reference")
+        fxref = QFormLayout(grp_xref)
+        self.xkey_combo = QComboBox()
+        
+        # Check if x_key is uniform
+        is_uniform, uniform_val = self._check_values_uniform('x_key')
+        
+        if is_uniform and uniform_val:
+            self.xkey_combo.addItem(uniform_val)
+            if self.available_vars:
+                for var in self.available_vars:
+                    if var != uniform_val:
+                        self.xkey_combo.addItem(var)
+            self.xkey_combo.setCurrentIndex(0)
+        else:
+            self.xkey_combo.addItem("Keep (Current)")
+            if self.available_vars:
+                for var in self.available_vars:
+                    self.xkey_combo.addItem(var)
+            self.xkey_combo.setCurrentIndex(0)
+        
+        self.xkey_combo.currentIndexChanged.connect(self._on_xkey_changed)
+        fxref.addRow("X Data Source:", self.xkey_combo)
+        layout.addWidget(grp_xref)
+        
+        # Axis Labels
+        grp_lbl = QGroupBox("Axis Labels")
+        flb = QFormLayout(grp_lbl)
+        self.ax_xlab = QLineEdit()
+        self.ax_xlab.textChanged.connect(lambda: self._mark_modified('ax_xlabel'))
+        
+        is_uniform_xlabel, uniform_xlabel = self._check_values_uniform('ax_xlabel')
+        if is_uniform_xlabel and uniform_xlabel:
+            self.ax_xlab.setText(uniform_xlabel)
+            self.ax_xlab.setPlaceholderText("Current X Label")
+        else:
+            self.ax_xlab.setPlaceholderText("Keep (Multiple different values)")
+        
+        self.ax_ylab = QLineEdit()
+        self.ax_ylab.textChanged.connect(lambda: self._mark_modified('ax_ylabel'))
+        
+        is_uniform_ylabel, uniform_ylabel = self._check_values_uniform('ax_ylabel')
+        if is_uniform_ylabel and uniform_ylabel:
+            self.ax_ylab.setText(uniform_ylabel)
+            self.ax_ylab.setPlaceholderText("Current Y Label")
+        else:
+            self.ax_ylab.setPlaceholderText("Keep (Multiple different values)")
+        
+        flb.addRow("X Label:", self.ax_xlab)
+        flb.addRow("Y Label:", self.ax_ylab)
+        layout.addWidget(grp_lbl)
+
+        # Axis Scale
+        grp_scl = QGroupBox("Axis Scale")
+        fsc2 = QFormLayout(grp_scl)
+        self.yscale_combo = QComboBox()
+        
+        is_uniform_yscale, uniform_yscale = self._check_values_uniform('yscale')
+        
+        if is_uniform_yscale:
+            sc_curr = uniform_yscale if uniform_yscale else 'linear'
+            self.yscale_combo.addItems(["Linear", "Log"])
+            self.yscale_combo.setCurrentIndex(0 if sc_curr == 'linear' else 1)
+        else:
+            self.yscale_combo.addItems(["Keep (Current)", "Linear", "Log"])
+            self.yscale_combo.setCurrentIndex(0)
+        
+        self.yscale_combo.currentIndexChanged.connect(lambda: self._mark_modified('yscale'))
+        fsc2.addRow("Y Scale:", self.yscale_combo)
+        layout.addWidget(grp_scl)
+
+        # Axis Limits
+        grp_ax = QGroupBox("Axis Limits")
+        fax = QFormLayout(grp_ax)
+        
+        self.ax_xmin = QLineEdit()
+        self.ax_xmin.textChanged.connect(lambda: self._mark_modified('ax_xmin'))
+        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
+        if is_uniform_xmin and uniform_xmin is not None:
+            self.ax_xmin.setText(str(uniform_xmin))
+            self.ax_xmin.setPlaceholderText("Current X Min")
+        else:
+            self.ax_xmin.setPlaceholderText("Keep (Multiple different values)" if len(self.traces) > 1 else "Keep")
+        
+        self.ax_xmax = QLineEdit()
+        self.ax_xmax.textChanged.connect(lambda: self._mark_modified('ax_xmax'))
+        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
+        if is_uniform_xmax and uniform_xmax is not None:
+            self.ax_xmax.setText(str(uniform_xmax))
+            self.ax_xmax.setPlaceholderText("Current X Max")
+        else:
+            self.ax_xmax.setPlaceholderText("Keep (Multiple different values)" if len(self.traces) > 1 else "Keep")
+        
+        self.ax_ymin = QLineEdit()
+        self.ax_ymin.textChanged.connect(lambda: self._mark_modified('ax_ymin'))
+        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
+        if is_uniform_ymin and uniform_ymin is not None:
+            self.ax_ymin.setText(str(uniform_ymin))
+            self.ax_ymin.setPlaceholderText("Current Y Min")
+        else:
+            self.ax_ymin.setPlaceholderText("Keep (Multiple different values)" if len(self.traces) > 1 else "Keep")
+        
+        self.ax_ymax = QLineEdit()
+        self.ax_ymax.textChanged.connect(lambda: self._mark_modified('ax_ymax'))
+        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
+        if is_uniform_ymax and uniform_ymax is not None:
+            self.ax_ymax.setText(str(uniform_ymax))
+            self.ax_ymax.setPlaceholderText("Current Y Max")
+        else:
+            self.ax_ymax.setPlaceholderText("Keep (Multiple different values)" if len(self.traces) > 1 else "Keep")
+        
+        val = QDoubleValidator()
+        self.ax_xmin.setValidator(val)
+        self.ax_xmax.setValidator(val)
+        self.ax_ymin.setValidator(val)
+        self.ax_ymax.setValidator(val)
+        
+        fax.addRow("X Min:", self.ax_xmin)
+        fax.addRow("X Max:", self.ax_xmax)
+        fax.addRow("Y Min:", self.ax_ymin)
+        fax.addRow("Y Max:", self.ax_ymax)
+        
+        # Autoscale buttons
+        h_auto = QHBoxLayout()
+        btn_auto_x = QPushButton("Autoscale X")
+        btn_auto_x.clicked.connect(self._autoscale_x)
+        btn_auto_y = QPushButton("Autoscale Y")
+        btn_auto_y.clicked.connect(self._autoscale_y)
+        h_auto.addWidget(btn_auto_x)
+        h_auto.addWidget(btn_auto_y)
+        fax.addRow("", h_auto)
+        
+        layout.addWidget(grp_ax)
+        layout.addStretch()
+    
+    def _mark_modified(self, field):
+        self.modified_fields.add(field)
+    
+    def _check_values_uniform(self, field_name):
+        """Check if a field has the same value across all traces"""
+        if len(self.traces) == 1:
+            return (True, self.traces[0].get(field_name))
+        
+        first_val = self.traces[0].get(field_name)
+        for trace in self.traces[1:]:
+            if trace.get(field_name) != first_val:
+                return (False, None)
+        return (True, first_val)
+    
+    def _on_xkey_changed(self):
+        self._mark_modified('x_key')
+    
+    def _autoscale_x(self):
+        """Set X-axis limits to autoscale values"""
+        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
+        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
+        
+        if not (is_uniform_xmin and is_uniform_xmax):
+            QMessageBox.information(
+                self, "Cannot Autoscale",
+                "X-axis limits differ across selected data.\n\n"
+                "Use the Autoscale button in Data Manager for multiple data."
+            )
+            return
+        
+        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'x')
+        if limits:
+            self.ax_xmin.setText(str(limits[0]))
+            self.ax_xmax.setText(str(limits[1]))
+            self._mark_modified('ax_xmin')
+            self._mark_modified('ax_xmax')
+
+    def _autoscale_y(self):
+        """Set Y-axis limits to autoscale values"""
+        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
+        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
+        
+        if not (is_uniform_ymin and is_uniform_ymax):
+            QMessageBox.information(
+                self, "Cannot Autoscale",
+                "Y-axis limits differ across selected data.\n\n"
+                "Use the Autoscale button in Data Manager for multiple data."
+            )
+            return
+        
+        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'y')
+        if limits:
+            self.ax_ymin.setText(str(limits[0]))
+            self.ax_ymax.setText(str(limits[1]))
+            self._mark_modified('ax_ymin')
+            self._mark_modified('ax_ymax')
+    
+    def get_data(self):
+        data = {}
+        if 'ax_xlabel' in self.modified_fields and self.ax_xlab.text():
+            data['ax_xlabel'] = self.ax_xlab.text()
+        if 'ax_ylabel' in self.modified_fields and self.ax_ylab.text():
+            data['ax_ylabel'] = self.ax_ylab.text()
+        
+        def parse(t):
+            return float(t) if t.strip() else None
+
+        if 'ax_xmin' in self.modified_fields:
+            data['ax_xmin'] = parse(self.ax_xmin.text())
+        if 'ax_xmax' in self.modified_fields:
+            data['ax_xmax'] = parse(self.ax_xmax.text())
+        if 'ax_ymin' in self.modified_fields:
+            data['ax_ymin'] = parse(self.ax_ymin.text())
+        if 'ax_ymax' in self.modified_fields:
+            data['ax_ymax'] = parse(self.ax_ymax.text())
+        
+        if 'yscale' in self.modified_fields:
+            yscale_text = self.yscale_combo.currentText()
+            if yscale_text != "Keep (Current)":
+                data['yscale'] = yscale_text.lower()
+        
+        if 'x_key' in self.modified_fields:
+            xkey_text = self.xkey_combo.currentText()
+            if xkey_text != "Keep (Current)":
+                data['x_key'] = xkey_text
+        
+        return data
+
+
+# ==========================================
+# Trace Settings Dialog (Main)
+# ==========================================
 class TraceSettingsDialog(QDialog):
     def __init__(self, trace_info, parent=None, available_vars=None):
         super().__init__(parent)
@@ -363,7 +816,6 @@ class TraceSettingsDialog(QDialog):
             self.t = trace_info
             self.is_multi = False
         
-        self.modified_fields = set()
         self.available_vars = available_vars if available_vars else []
         layout = QVBoxLayout()
 
@@ -384,291 +836,14 @@ class TraceSettingsDialog(QDialog):
 
         tabs = QTabWidget()
 
-        # Style Tab
-        tab_style = QWidget()
-        l_style = QVBoxLayout(tab_style)
-        
-        # Line Section
-        grp_line = QGroupBox("Line")
-        fl = QFormLayout(grp_line)
-        
-        # Line style
-        self.style_combo = QComboBox()
-        self.style_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot", "None"])
-        inv_style = {'-': 0, '--': 1, ':': 2, '-.': 3, 'None': 4}
-        current_style = self.t.get('linestyle', '-')
-        if current_style in inv_style:
-            self.style_combo.setCurrentIndex(inv_style[current_style])
-        self.style_combo.currentIndexChanged.connect(lambda: self.mark_modified('linestyle'))
-        
-        # Draw style (always "Default" for now, can be extended)
-        self.draw_style_combo = QComboBox()
-        self.draw_style_combo.addItems(["Default"])
-        self.draw_style_combo.setCurrentIndex(0)
-        
-        # Line width
-        self.width_spin = QDoubleSpinBox()
-        self.width_spin.setRange(0.1, 20)
-        self.width_spin.setValue(self.t.get('linewidth', 1.5))
-        self.width_spin.valueChanged.connect(lambda: self.mark_modified('linewidth'))
-        
-        # Line color
-        self.color_btn = QPushButton()
-        self.color = self.t.get('color', '#1f77b4')
-        self.color_btn.setStyleSheet(f"background-color: {self.color}")
-        self.color_btn.setFixedHeight(30)
-        self.color_btn.clicked.connect(self.pick_color)
-        
-        fl.addRow("Line style:", self.style_combo)
-        fl.addRow("Draw style:", self.draw_style_combo)
-        fl.addRow("Width:", self.width_spin)
-        fl.addRow("Color (RGBA):", self.color_btn)
-        l_style.addWidget(grp_line)
-        
-        # Marker Section
-        grp_marker = QGroupBox("Marker")
-        fm = QFormLayout(grp_marker)
-        
-        # Marker style
-        self.marker_style_combo = QComboBox()
-        self.marker_style_combo.addItems(["nothing", "o", "^", "s", "+", "x", "*", "D", "v", "<", ">"])
-        marker_map = {'nothing': 0, 'o': 1, '^': 2, 's': 3, '+': 4, 'x': 5, '*': 6, 'D': 7, 'v': 8, '<': 9, '>': 10}
-        current_marker = self.t.get('marker', 'nothing')
-        if current_marker in marker_map:
-            self.marker_style_combo.setCurrentIndex(marker_map[current_marker])
-        self.marker_style_combo.currentIndexChanged.connect(lambda: self.mark_modified('marker'))
-        
-        # Marker size
-        self.marker_size_spin = QDoubleSpinBox()
-        self.marker_size_spin.setRange(1, 100)
-        self.marker_size_spin.setValue(self.t.get('markersize', 2.0))
-        self.marker_size_spin.valueChanged.connect(lambda: self.mark_modified('markersize'))
-        
-        # Marker face color
-        self.marker_face_color_btn = QPushButton()
-        self.marker_face_color = self.t.get('marker_face_color', '#1f77b4')
-        self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
-        self.marker_face_color_btn.setFixedHeight(30)
-        self.marker_face_color_btn.clicked.connect(self.pick_marker_face_color)
-        
-        # Marker edge color
-        self.marker_edge_color_btn = QPushButton()
-        self.marker_edge_color = self.t.get('marker_edge_color', '#1f77b4')
-        self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
-        self.marker_edge_color_btn.setFixedHeight(30)
-        self.marker_edge_color_btn.clicked.connect(self.pick_marker_edge_color)
-        
-        fm.addRow("Style:", self.marker_style_combo)
-        fm.addRow("Size:", self.marker_size_spin)
-        fm.addRow("Face color (RGBA):", self.marker_face_color_btn)
-        fm.addRow("Edge color (RGBA):", self.marker_edge_color_btn)
-        l_style.addWidget(grp_marker)
-        
-        tabs.addTab(tab_style, "Style")
+        # Create tab instances
+        self.style_tab = TraceStyleTab(self.t, self)
+        self.math_tab = TraceMathTab(self.t, self)
+        self.axis_tab = TraceAxisTab(self.traces, self.available_vars, self)
 
-        # Math Tab
-        tab_math = QWidget()
-        l_math = QVBoxLayout(tab_math)
-        grp_sc = QGroupBox("Scaling")
-        fsc = QFormLayout(grp_sc)
-        self.x_fac = QDoubleSpinBox()
-        self.x_fac.setRange(-1e6, 1e6)
-        self.x_fac.setValue(self.t.get('x_factor', 1.0))
-        self.x_fac.valueChanged.connect(lambda: self.mark_modified('x_factor'))
-        self.x_off = QDoubleSpinBox()
-        self.x_off.setRange(-1e6, 1e6)
-        self.x_off.setValue(self.t.get('x_offset', 0.0))
-        self.x_off.valueChanged.connect(lambda: self.mark_modified('x_offset'))
-        self.y_fac = QDoubleSpinBox()
-        self.y_fac.setRange(-1e6, 1e6)
-        self.y_fac.setValue(self.t.get('y_factor', 1.0))
-        self.y_fac.valueChanged.connect(lambda: self.mark_modified('y_factor'))
-        self.y_off = QDoubleSpinBox()
-        self.y_off.setRange(-1e6, 1e6)
-        self.y_off.setValue(self.t.get('y_offset', 0.0))
-        self.y_off.valueChanged.connect(lambda: self.mark_modified('y_offset'))
-        fsc.addRow("X Factor:", self.x_fac)
-        fsc.addRow("X Offset:", self.x_off)
-        fsc.addRow("Y Factor:", self.y_fac)
-        fsc.addRow("Y Offset:", self.y_off)
-        l_math.addWidget(grp_sc)
-
-        grp_trans = QGroupBox("Transformation")
-        ftr = QFormLayout(grp_trans)
-        self.trans_combo = QComboBox()
-        self.trans_combo.addItems(["None", "Moving Average", "Cumulative Sum (Integral)"])
-        t_map = {'None': 0, 'mov_avg': 1, 'cumsum': 2}
-        if self.t.get('transform') in t_map:
-            self.trans_combo.setCurrentIndex(t_map[self.t.get('transform')])
-        self.trans_combo.currentIndexChanged.connect(lambda: self.mark_modified('transform'))
-        self.win_size = QSpinBox()
-        self.win_size.setRange(1, 10000)
-        self.win_size.setValue(self.t.get('window_size', 5))
-        self.win_size.valueChanged.connect(lambda: self.mark_modified('window_size'))
-        ftr.addRow("Mode:", self.trans_combo)
-        ftr.addRow("Window:", self.win_size)
-        l_math.addWidget(grp_trans)
-        tabs.addTab(tab_math, "Scaling/Math")
-
-        # Axis Tab
-        tab_axis = QWidget()
-        l_axis = QVBoxLayout(tab_axis)
-        l_axis.addWidget(QLabel("Leave blank to keep current settings."))
-        
-        # X-Axis Reference
-        grp_xref = QGroupBox("X-Axis Reference")
-        fxref = QFormLayout(grp_xref)
-        self.xkey_combo = QComboBox()
-        
-        # Check if x_key is uniform across selected traces
-        is_uniform, uniform_val = self._check_values_uniform('x_key')
-        
-        if is_uniform and uniform_val:
-            # All traces have the same x_key
-            self.xkey_combo.addItem(uniform_val)
-            if self.available_vars:
-                for var in self.available_vars:
-                    if var != uniform_val:
-                        self.xkey_combo.addItem(var)
-            self.xkey_combo.setCurrentIndex(0)
-        else:
-            # Values differ or not set - show "Keep (Current)" option
-            self.xkey_combo.addItem("Keep (Current)")
-            if self.available_vars:
-                for var in self.available_vars:
-                    self.xkey_combo.addItem(var)
-            self.xkey_combo.setCurrentIndex(0)
-        
-        # Connect signal first to capture user changes only
-        self.xkey_combo.currentIndexChanged.connect(self._on_xkey_changed)
-        
-        fxref.addRow("X Data Source:", self.xkey_combo)
-        l_axis.addWidget(grp_xref)
-        
-        grp_lbl = QGroupBox("Axis Labels")
-        flb = QFormLayout(grp_lbl)
-        self.ax_xlab = QLineEdit()
-        self.ax_xlab.textChanged.connect(lambda: self.mark_modified('ax_xlabel'))
-        
-        # Check if ax_xlabel is uniform
-        is_uniform_xlabel, uniform_xlabel = self._check_values_uniform('ax_xlabel')
-        if is_uniform_xlabel and uniform_xlabel:
-            self.ax_xlab.setText(uniform_xlabel)
-            self.ax_xlab.setPlaceholderText("Current X Label")
-        else:
-            self.ax_xlab.setPlaceholderText("Keep (Multiple different values)")
-        
-        self.ax_ylab = QLineEdit()
-        self.ax_ylab.textChanged.connect(lambda: self.mark_modified('ax_ylabel'))
-        
-        # Check if ax_ylabel is uniform
-        is_uniform_ylabel, uniform_ylabel = self._check_values_uniform('ax_ylabel')
-        if is_uniform_ylabel and uniform_ylabel:
-            self.ax_ylab.setText(uniform_ylabel)
-            self.ax_ylab.setPlaceholderText("Current Y Label")
-        else:
-            self.ax_ylab.setPlaceholderText("Keep (Multiple different values)")
-        
-        flb.addRow("X Label:", self.ax_xlab)
-        flb.addRow("Y Label:", self.ax_ylab)
-        l_axis.addWidget(grp_lbl)
-
-        grp_scl = QGroupBox("Axis Scale")
-        fsc2 = QFormLayout(grp_scl)
-        self.yscale_combo = QComboBox()
-        
-        # Check if yscale is uniform
-        is_uniform_yscale, uniform_yscale = self._check_values_uniform('yscale')
-        
-        if is_uniform_yscale:
-            # All traces have the same yscale
-            sc_curr = uniform_yscale if uniform_yscale else 'linear'
-            self.yscale_combo.addItems(["Linear", "Log"])
-            self.yscale_combo.setCurrentIndex(0 if sc_curr == 'linear' else 1)
-        else:
-            # Values differ - add "Keep (Current)" option
-            self.yscale_combo.addItems(["Keep (Current)", "Linear", "Log"])
-            self.yscale_combo.setCurrentIndex(0)
-        
-        self.yscale_combo.currentIndexChanged.connect(lambda: self.mark_modified('yscale'))
-        fsc2.addRow("Y Scale:", self.yscale_combo)
-        l_axis.addWidget(grp_scl)
-
-        grp_ax = QGroupBox("Axis Limits")
-        fax = QFormLayout(grp_ax)
-        
-        self.ax_xmin = QLineEdit()
-        self.ax_xmin.textChanged.connect(lambda: self.mark_modified('ax_xmin'))
-        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
-        if is_uniform_xmin and uniform_xmin is not None:
-            self.ax_xmin.setText(str(uniform_xmin))
-            self.ax_xmin.setPlaceholderText("Current X Min")
-        else:
-            self.ax_xmin.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
-        
-        self.ax_xmax = QLineEdit()
-        self.ax_xmax.textChanged.connect(lambda: self.mark_modified('ax_xmax'))
-        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
-        if is_uniform_xmax and uniform_xmax is not None:
-            self.ax_xmax.setText(str(uniform_xmax))
-            self.ax_xmax.setPlaceholderText("Current X Max")
-        else:
-            self.ax_xmax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
-        
-        self.ax_ymin = QLineEdit()
-        self.ax_ymin.textChanged.connect(lambda: self.mark_modified('ax_ymin'))
-        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
-        if is_uniform_ymin and uniform_ymin is not None:
-            self.ax_ymin.setText(str(uniform_ymin))
-            self.ax_ymin.setPlaceholderText("Current Y Min")
-        else:
-            self.ax_ymin.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
-        
-        self.ax_ymax = QLineEdit()
-        self.ax_ymax.textChanged.connect(lambda: self.mark_modified('ax_ymax'))
-        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
-        if is_uniform_ymax and uniform_ymax is not None:
-            self.ax_ymax.setText(str(uniform_ymax))
-            self.ax_ymax.setPlaceholderText("Current Y Max")
-        else:
-            self.ax_ymax.setPlaceholderText("Keep (Multiple different values)" if self.is_multi else "Keep")
-        
-        val = QDoubleValidator()
-        self.ax_xmin.setValidator(val)
-        self.ax_xmax.setValidator(val)
-        self.ax_ymin.setValidator(val)
-        self.ax_ymax.setValidator(val)
-        
-        # X-axis row with autoscale button
-        h_x_min = QHBoxLayout()
-        h_x_min.addWidget(self.ax_xmin)
-        fax.addRow("X Min:", h_x_min)
-        
-        h_x_max = QHBoxLayout()
-        h_x_max.addWidget(self.ax_xmax)
-        fax.addRow("X Max:", h_x_max)
-        
-        # Y-axis row with autoscale button
-        h_y_min = QHBoxLayout()
-        h_y_min.addWidget(self.ax_ymin)
-        fax.addRow("Y Min:", h_y_min)
-        
-        h_y_max = QHBoxLayout()
-        h_y_max.addWidget(self.ax_ymax)
-        fax.addRow("Y Max:", h_y_max)
-        
-        # Autoscale buttons
-        h_auto = QHBoxLayout()
-        btn_auto_x = QPushButton("Autoscale X")
-        btn_auto_x.clicked.connect(self._autoscale_x)
-        btn_auto_y = QPushButton("Autoscale Y")
-        btn_auto_y.clicked.connect(self._autoscale_y)
-        h_auto.addWidget(btn_auto_x)
-        h_auto.addWidget(btn_auto_y)
-        fax.addRow("", h_auto)
-        
-        l_axis.addWidget(grp_ax)
-        tabs.addTab(tab_axis, "Axis")
+        tabs.addTab(self.style_tab, "Style")
+        tabs.addTab(self.math_tab, "Scaling/Math")
+        tabs.addTab(self.axis_tab, "Axis")
 
         layout.addWidget(tabs)
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -678,207 +853,20 @@ class TraceSettingsDialog(QDialog):
         self.setLayout(layout)
 
     def mark_modified(self, field):
-        self.modified_fields.add(field)
-
-    def _check_values_uniform(self, field_name):
-        """Check if a field has the same value across all selected traces.
-        Returns (is_uniform, value) where:
-        - is_uniform=True, value=common_value if all traces have the same value
-        - is_uniform=False, value=None if values differ
-        """
-        if len(self.traces) == 1:
-            return (True, self.traces[0].get(field_name))
-        
-        first_val = self.traces[0].get(field_name)
-        for trace in self.traces[1:]:
-            if trace.get(field_name) != first_val:
-                return (False, None)
-        return (True, first_val)
-
-    def _on_xkey_changed(self):
-        self.mark_modified('x_key')
-
-    def pick_color(self):
-        c = QColorDialog.getColor(QColor(self.color))
-        if c.isValid():
-            self.color = c.name()
-            self.color_btn.setStyleSheet(f"background-color: {self.color}")
-            self.mark_modified('color')
-
-    def pick_marker_face_color(self):
-        c = QColorDialog.getColor(QColor(self.marker_face_color))
-        if c.isValid():
-            self.marker_face_color = c.name()
-            self.marker_face_color_btn.setStyleSheet(f"background-color: {self.marker_face_color}")
-            self.mark_modified('marker_face_color')
-
-    def pick_marker_edge_color(self):
-        c = QColorDialog.getColor(QColor(self.marker_edge_color))
-        if c.isValid():
-            self.marker_edge_color = c.name()
-            self.marker_edge_color_btn.setStyleSheet(f"background-color: {self.marker_edge_color}")
-            self.mark_modified('marker_edge_color')
-
-    def _round_nice(self, value, round_down=False):
-        """Round value to a nice number for axis limits.
-        
-        Nice numbers are: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10
-        This handles the normalized value (0-10 range).
-        """
-        import math
-        if value == 0:
-            return 0
-        
-        sign = -1 if value < 0 else 1
-        abs_val = abs(value)
-        
-        # Get order of magnitude
-        order = math.floor(math.log10(abs_val))
-        normalized = abs_val / (10 ** order)
-        
-        # Nice numbers in order
-        nice_numbers = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
-        
-        if round_down:
-            # Find the largest nice number <= normalized
-            selected = nice_numbers[0]
-            for nice in nice_numbers:
-                if nice <= normalized:
-                    selected = nice
-                else:
-                    break
-        else:
-            # Find the smallest nice number >= normalized
-            selected = nice_numbers[-1]
-            for nice in nice_numbers:
-                if nice >= normalized:
-                    selected = nice
-                    break
-        
-        return sign * selected * (10 ** order)
-
-    def _autoscale_x(self):
-        """Set X-axis limits to autoscale values.
-        Only works if X-axis limits are uniform (single data or same limits).
-        """
-        # Check if X limits are uniform
-        is_uniform_xmin, uniform_xmin = self._check_values_uniform('ax_xmin')
-        is_uniform_xmax, uniform_xmax = self._check_values_uniform('ax_xmax')
-        
-        if not (is_uniform_xmin and is_uniform_xmax):
-            # Multiple different values - don't apply autoscale
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self, "Cannot Autoscale",
-                "X-axis limits differ across selected data.\n\n"
-                "Use the Autoscale button in Data Manager for multiple data."
-            )
-            return
-        
-        # Use PageCanvas static method for calculation
-        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'x')
-        if limits:
-            self.ax_xmin.setText(str(limits[0]))
-            self.ax_xmax.setText(str(limits[1]))
-            self.mark_modified('ax_xmin')
-            self.mark_modified('ax_xmax')
-
-    def _autoscale_y(self):
-        """Set Y-axis limits to autoscale values.
-        Only works if Y-axis limits are uniform (single data or same limits).
-        """
-        # Check if Y limits are uniform
-        is_uniform_ymin, uniform_ymin = self._check_values_uniform('ax_ymin')
-        is_uniform_ymax, uniform_ymax = self._check_values_uniform('ax_ymax')
-        
-        if not (is_uniform_ymin and is_uniform_ymax):
-            # Multiple different values - don't apply autoscale
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self, "Cannot Autoscale",
-                "Y-axis limits differ across selected data.\n\n"
-                "Use the Autoscale button in Data Manager for multiple data."
-            )
-            return
-        
-        # Use PageCanvas static method for calculation
-        limits = PageCanvas.calculate_nice_autoscale_limits(self.traces, 'y')
-        if limits:
-            self.ax_ymin.setText(str(limits[0]))
-            self.ax_ymax.setText(str(limits[1]))
-            self.mark_modified('ax_ymin')
-            self.mark_modified('ax_ymax')
+        pass  # Unused in refactored version, kept for compatibility
 
     def get_data(self):
         data = {}
-        if 'label' in self.modified_fields and self.lbl_edit.text():
+        
+        # General tab
+        if self.lbl_edit.text():
             data['label'] = self.lbl_edit.text()
-        if 'yaxis' in self.modified_fields:
-            data['yaxis'] = self.side_combo.currentText().lower()
-        if 'yscale' in self.modified_fields:
-            yscale_text = self.yscale_combo.currentText()
-            # If "Keep (Current)" is selected, don't apply
-            if yscale_text != "Keep (Current)":
-                data['yscale'] = yscale_text.lower()
-
-        if 'linewidth' in self.modified_fields:
-            data['linewidth'] = self.width_spin.value()
-        if 'color' in self.modified_fields:
-            data['color'] = self.color
-        if 'linestyle' in self.modified_fields:
-            # Map text to matplotlib linestyle
-            style_map = {'Solid': '-', 'Dashed': '--', 'Dotted': ':', 'DashDot': '-.', 'None': 'None'}
-            data['linestyle'] = style_map.get(self.style_combo.currentText(), '-')
+        data['yaxis'] = self.side_combo.currentText().lower()
         
-        if 'marker' in self.modified_fields:
-            marker_text = self.marker_style_combo.currentText()
-            data['marker'] = marker_text if marker_text != 'nothing' else 'None'
-        
-        if 'markersize' in self.modified_fields:
-            data['markersize'] = self.marker_size_spin.value()
-        
-        if 'marker_face_color' in self.modified_fields:
-            data['marker_face_color'] = self.marker_face_color
-        
-        if 'marker_edge_color' in self.modified_fields:
-            data['marker_edge_color'] = self.marker_edge_color
-
-        if 'x_factor' in self.modified_fields:
-            data['x_factor'] = self.x_fac.value()
-        if 'x_offset' in self.modified_fields:
-            data['x_offset'] = self.x_off.value()
-        if 'y_factor' in self.modified_fields:
-            data['y_factor'] = self.y_fac.value()
-        if 'y_offset' in self.modified_fields:
-            data['y_offset'] = self.y_off.value()
-        if 'transform' in self.modified_fields:
-            t_txt = self.trans_combo.currentText()
-            data['transform'] = 'None' if "None" in t_txt else 'mov_avg' if "Average" in t_txt else 'cumsum'
-        if 'window_size' in self.modified_fields:
-            data['window_size'] = self.win_size.value()
-
-        if 'ax_xlabel' in self.modified_fields and self.ax_xlab.text():
-            data['ax_xlabel'] = self.ax_xlab.text()
-        if 'ax_ylabel' in self.modified_fields and self.ax_ylab.text():
-            data['ax_ylabel'] = self.ax_ylab.text()
-
-        def parse(t):
-            return float(t) if t.strip() else None
-
-        if 'ax_xmin' in self.modified_fields:
-            data['ax_xmin'] = parse(self.ax_xmin.text())
-        if 'ax_xmax' in self.modified_fields:
-            data['ax_xmax'] = parse(self.ax_xmax.text())
-        if 'ax_ymin' in self.modified_fields:
-            data['ax_ymin'] = parse(self.ax_ymin.text())
-        if 'ax_ymax' in self.modified_fields:
-            data['ax_ymax'] = parse(self.ax_ymax.text())
-        
-        if 'x_key' in self.modified_fields:
-            xkey_text = self.xkey_combo.currentText()
-            # If "Keep (Current)" is selected, don't apply
-            if xkey_text != "Keep (Current)":
-                data['x_key'] = xkey_text
+        # Collect from sub-tabs
+        data.update(self.style_tab.get_data())
+        data.update(self.math_tab.get_data())
+        data.update(self.axis_tab.get_data())
         
         return data
 
