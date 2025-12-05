@@ -1800,8 +1800,6 @@ class PageCanvas(QWidget):
 
         self.global_xlim_changed.emit(link_id, xlim[0], xlim[1])
 
-    @staticmethod
-
     def apply_global_xlim(self, link_id, xmin, xmax):
         if self._updating_xlim:
             return
@@ -2431,11 +2429,14 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             self.add_page_direct(pd_['rows'], pd_['cols'], False)
             pg = self.tab_widget.widget(self.tab_widget.count() - 1)
             self.tab_widget.setTabText(self.tab_widget.count() - 1, pd_['title'])
-            pg.axis_link_ids = pd_['link_ids']
+            
+            # Restore xLink information
+            pg.xlink_mgr.axis_link_ids = pd_['link_ids']
+            pg._rebuild_xlink_groups()
+            
             pg.legend_cfgs = pd_['legend_cfgs']
             pg.trace_cnt = pd_['trace_cnt']
             pg.traces = {}
-            pg._rebuild_xlink_groups()
 
             for tid, t_cfg in pd_['traces'].items():
                 ax_idx = t_cfg['ax_idx']
