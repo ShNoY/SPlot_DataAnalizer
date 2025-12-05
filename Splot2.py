@@ -2407,10 +2407,25 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                     if 'line' in t_copy:
                         del t_copy['line']
                     traces_cfg[tid] = t_copy
+                
+                # Save axis information (labels, scales, etc.)
+                axes_info = {}
+                for ax_idx, info in pg.axis_info.items():
+                    axes_info[ax_idx] = {
+                        'xlabel': info.xlabel,
+                        'ylabel': info.ylabel,
+                        'yscale': info.yscale,
+                        'xmin': info.xmin,
+                        'xmax': info.xmax,
+                        'ymin': info.ymin,
+                        'ymax': info.ymax
+                    }
+                
                 pages_data.append({
                     "rows": pg.rows,
                     "cols": pg.cols,
                     "axes_limits": ax_limits,
+                    "axes_info": axes_info,
                     "traces": traces_cfg,
                     "link_ids": pg.axis_link_ids,
                     "title": self.tab_widget.tabText(i),
@@ -2437,6 +2452,26 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
             pg.legend_cfgs = pd_['legend_cfgs']
             pg.trace_cnt = pd_['trace_cnt']
             pg.traces = {}
+            
+            # Restore axis information (labels, scales)
+            if 'axes_info' in pd_:
+                for ax_idx, ax_info in pd_['axes_info'].items():
+                    ax_idx = int(ax_idx)  # Convert string key to int
+                    if ax_idx in pg.axis_info:
+                        pg.axis_info[ax_idx].xlabel = ax_info.get('xlabel', '')
+                        pg.axis_info[ax_idx].ylabel = ax_info.get('ylabel', '')
+                        pg.axis_info[ax_idx].yscale = ax_info.get('yscale', 'linear')
+                        pg.axis_info[ax_idx].xmin = ax_info.get('xmin')
+                        pg.axis_info[ax_idx].xmax = ax_info.get('xmax')
+                        pg.axis_info[ax_idx].ymin = ax_info.get('ymin')
+                        pg.axis_info[ax_idx].ymax = ax_info.get('ymax')
+                        
+                        # Apply to matplotlib axes
+                        ax = pg.axes[ax_idx]
+                        if ax_info.get('xlabel'):
+                            ax.set_xlabel(ax_info['xlabel'])
+                        if ax_info.get('yscale'):
+                            ax.set_yscale(ax_info['yscale'])
 
             for tid, t_cfg in pd_['traces'].items():
                 ax_idx = t_cfg['ax_idx']
@@ -2456,10 +2491,46 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
                     target_ax.set_yscale(t_cfg['yscale'])
 
                 line, = target_ax.plot([], [], label=t_cfg['label'], picker=5)
+                
+                # Apply line styling
+                if t_cfg.get('color'):
+                    line.set_color(t_cfg['color'])
+                if t_cfg.get('linewidth'):
+                    line.set_linewidth(t_cfg['linewidth'])
+                if t_cfg.get('linestyle') and t_cfg['linestyle'] != 'None':
+                    line.set_linestyle(t_cfg['linestyle'])
+                if t_cfg.get('marker') and t_cfg['marker'] != 'None':
+                    line.set_marker(t_cfg['marker'])
+                if t_cfg.get('markersize'):
+                    line.set_markersize(t_cfg['markersize'])
+                if t_cfg.get('marker_face_color'):
+                    line.set_markerfacecolor(t_cfg['marker_face_color'])
+                if t_cfg.get('marker_edge_color'):
+                    line.set_markeredgecolor(t_cfg['marker_edge_color'])
+                
                 t_full = t_cfg.copy()
                 t_full['line'] = line
                 pg.traces[tid] = t_full
                 pg.update_trace(tid, t_cfg)
+            
+            # Restore axis limit values from traces
+            for tid, t_cfg in pg.traces.items():
+                ax_idx = t_cfg['ax_idx']
+                ax = pg.axes[ax_idx]
+                
+                # Restore X-axis limits if they were explicitly set
+                if t_cfg.get('ax_xmin') is not None or t_cfg.get('ax_xmax') is not None:
+                    xmin = t_cfg.get('ax_xmin', ax.get_xlim()[0])
+                    xmax = t_cfg.get('ax_xmax', ax.get_xlim()[1])
+                    ax.set_xlim(xmin, xmax)
+                
+                # Restore Y-axis limits if they were explicitly set
+                if t_cfg.get('ax_ymin') is not None or t_cfg.get('ax_ymax') is not None:
+                    target_side = t_cfg.get('yaxis', 'left')
+                    target_ax = pg.twins.get(ax) if target_side == 'right' else ax
+                    ymin = t_cfg.get('ax_ymin', target_ax.get_ylim()[0])
+                    ymax = t_cfg.get('ax_ymax', target_ax.get_ylim()[1])
+                    target_ax.set_ylim(ymin, ymax)
 
             for j, (xlim, ylim) in enumerate(pd_['axes_limits']):
                 if j < len(pg.axes):
