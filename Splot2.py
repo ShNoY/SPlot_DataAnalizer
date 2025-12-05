@@ -1551,6 +1551,207 @@ class MiniPlotCanvas(FigureCanvas):
         except Exception:
             pass
 
+# ==========================================
+# X-Link Manager - Handle cross-axis linking
+# ==========================================
+class XLinkManager:
+    """Manages X-axis linking between multiple axes"""
+    
+    def __init__(self):
+        self.axis_link_ids = {}  # axis_idx -> link_id
+        self.xlink_groups = []   # display groups
+    
+    def create_group(self, ax_indices, link_id=None):
+        """Create X-link group"""
+        import uuid
+        if not ax_indices:
+            return link_id
+        
+        if link_id is None:
+            link_id = str(uuid.uuid4())[:8]
+        
+        for idx in ax_indices:
+            self.axis_link_ids[idx] = link_id
+        
+        self._rebuild_groups()
+        return link_id
+    
+    def remove_from_group(self, ax_idx):
+        """Remove axis from its link group"""
+        if ax_idx in self.axis_link_ids:
+            del self.axis_link_ids[ax_idx]
+            self._rebuild_groups()
+    
+    def _rebuild_groups(self):
+        """Rebuild display groups from link_ids"""
+        groups = {}
+        for ax_idx, lid in self.axis_link_ids.items():
+            groups.setdefault(lid, []).append(ax_idx)
+        self.xlink_groups = list(groups.values())
+    
+    def get_link_id(self, ax_idx):
+        """Get link_id for an axis"""
+        return self.axis_link_ids.get(ax_idx)
+
+
+# ==========================================
+# Legend Manager - Handle legend settings
+# ==========================================
+class LegendManager:
+    """Manages legend configuration and rendering"""
+    
+    def __init__(self, num_axes):
+        self.configs = {i: {'content': 'both', 'loc': 'best'} for i in range(num_axes)}
+    
+    def set_config(self, ax_idx, config):
+        """Update legend config for an axis"""
+        self.configs[ax_idx] = config
+    
+    def get_config(self, ax_idx):
+        """Get legend config for an axis"""
+        return self.configs.get(ax_idx, {'content': 'both', 'loc': 'best'})
+    
+    def apply_to_axes(self, axes, twins, traces):
+        """Apply legend settings to all axes"""
+        for i, ax in enumerate(axes):
+            cfg = self.get_config(i)
+            mode = cfg['content']
+            loc = cfg['loc']
+            
+            # Remove existing legends
+            if ax.get_legend():
+                ax.get_legend().remove()
+            if twins.get(ax) and twins[ax].get_legend():
+                twins[ax].get_legend().remove()
+            
+            if mode == 'none':
+                continue
+            
+            lines = []
+            
+            # Process left axis
+            for line in ax.get_lines():
+                if line.get_label().startswith('_'):
+                    continue
+                for t in traces.values():
+                    if t['line'] == line:
+                        final = t['label']
+                        if mode == 'file':
+                            final = t['file']
+                        elif mode == 'both':
+                            final = f"{t['label']} @ {t['file']}"
+                        line.set_label(final)
+                        lines.append(line)
+            
+            # Process right axis if exists
+            if ax in twins:
+                for line in twins[ax].get_lines():
+                    if line.get_label().startswith('_'):
+                        continue
+                    for t in traces.values():
+                        if t['line'] == line:
+                            final = t['label']
+                            if mode == 'file':
+                                final = t['file']
+                            elif mode == 'both':
+                                final = f"{t['label']} @ {t['file']}"
+                            line.set_label(final)
+                            lines.append(line)
+            
+            if not lines:
+                continue
+            
+            kw = {'draggable': True}
+            if loc == 'manual':
+                pass
+            elif loc == 'outside right':
+                kw.update({'bbox_to_anchor': (1.10, 1), 'loc': 'upper left'})
+            else:
+                kw['loc'] = loc
+            
+            labs = [l.get_label() for l in lines]
+            ax.legend(lines, labs, **kw)
+
+
+# ==========================================
+# Autoscale Calculator - Handle axis scaling
+# ==========================================
+class AutoscaleCalculator:
+    """Static methods for autoscale calculations"""
+    
+    @staticmethod
+    def calculate_limits(traces_list, axis_dir='x'):
+        """Calculate nice autoscale limits for traces"""
+        import numpy as np
+        import math
+        
+        all_values = []
+        
+        for trace in traces_list:
+            if 'line' not in trace:
+                continue
+            
+            line = trace['line']
+            if axis_dir == 'x':
+                data = line.get_xdata()
+                factor = trace.get('x_factor', 1.0)
+                offset = trace.get('x_offset', 0.0)
+            else:
+                data = line.get_ydata()
+                factor = trace.get('y_factor', 1.0)
+                offset = trace.get('y_offset', 0.0)
+            
+            transformed = data * factor + offset
+            valid = transformed[np.isfinite(transformed)]
+            if len(valid) > 0:
+                all_values.extend(valid)
+        
+        if not all_values:
+            return None
+        
+        min_val = float(np.min(all_values))
+        max_val = float(np.max(all_values))
+        
+        margin = (max_val - min_val) * 0.05
+        if margin == 0:
+            margin = abs(min_val) * 0.1 if min_val != 0 else 1.0
+        
+        nice_min = AutoscaleCalculator._round_to_nice(min_val - margin, round_down=True)
+        nice_max = AutoscaleCalculator._round_to_nice(max_val + margin, round_down=False)
+        
+        return (nice_min, nice_max)
+    
+    @staticmethod
+    def _round_to_nice(value, round_down=False):
+        """Round to nice number"""
+        import math
+        if value == 0:
+            return 0
+        
+        sign = -1 if value < 0 else 1
+        abs_val = abs(value)
+        order = math.floor(math.log10(abs_val))
+        normalized = abs_val / (10 ** order)
+        
+        nice_numbers = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+        
+        if round_down:
+            selected = nice_numbers[0]
+            for nice in nice_numbers:
+                if nice <= normalized:
+                    selected = nice
+                else:
+                    break
+        else:
+            selected = nice_numbers[-1]
+            for nice in nice_numbers:
+                if nice >= normalized:
+                    selected = nice
+                    break
+        
+        return sign * selected * (10 ** order)
+
+
 class PageCanvas(QWidget):
     # ---- Signals ----
     refresh_requested = pyqtSignal()
@@ -1563,25 +1764,23 @@ class PageCanvas(QWidget):
         super().__init__()
         self.rows = rows
         self.cols = cols
-        self.parent_app = parent_app  # Reference to SPlotApp for file_data_map access
+        self.parent_app = parent_app
 
         # Traces {tid: {...}}
         self.traces = {}
         self.trace_cnt = 0
 
-        # X-Link management: axis index -> link_id (string)
-        self.axis_link_ids = {}
+        # Managers
+        self.xlink_mgr = XLinkManager()
+        self.legend_mgr = LegendManager(rows * cols)
 
-        # Display group list
-        self.xlink_groups = []
-
-        # Legend settings
-        self.legend_cfgs = {i: {'content': 'both', 'loc': 'best'} for i in range(rows * cols)}
+        # For backward compatibility
+        self.axis_link_ids = self.xlink_mgr.axis_link_ids
+        self.xlink_groups = self.xlink_mgr.xlink_groups
+        self.legend_cfgs = self.legend_mgr.configs
 
         # Matplotlib Figure/Canvas
         self.fig = Figure(figsize=(8, 11), dpi=100)
-        
-        # Ensure Japanese font is used for this figure
         self.fig.text(0, 0, '', fontproperties=matplotlib.font_manager.FontProperties(
             family=matplotlib.rcParams['font.sans-serif'][0]))
         
@@ -1590,8 +1789,8 @@ class PageCanvas(QWidget):
 
         # Axis creation
         self.axes = []
-        self.axis_info = {}  # axis_idx -> AxisInfo
-        self.twins = {}  # primary_ax -> twin_ax
+        self.axis_info = {}
+        self.twins = {}
         self._updating_xlim = False
         self.selected_line = None
         self.current_context_ax = None
@@ -1601,7 +1800,6 @@ class PageCanvas(QWidget):
             ax.grid(True)
             ax.callbacks.connect('xlim_changed', lambda evt, idx=i: self.on_xlim_changed(idx, evt))
             self.axes.append(ax)
-            # Create AxisInfo for each axis
             self.axis_info[i] = AxisInfo(i, ax)
 
         # Context menu & events
@@ -1620,44 +1818,30 @@ class PageCanvas(QWidget):
     # =========================
     def _rebuild_xlink_groups(self):
         """Rebuild xlink_groups (for display) from axis_link_ids"""
-        groups = {}
-        for ax_idx, lid in self.axis_link_ids.items():
-            groups.setdefault(lid, []).append(ax_idx)
-        self.xlink_groups = list(groups.values())
+        self.xlink_mgr._rebuild_groups()
+        self.xlink_groups = self.xlink_mgr.xlink_groups
 
     def create_xlink_group(self, ax_indices, link_id=None):
-        """
-        ax_indices : list of axis indices on this page to link
-        link_id    : if None, generate a new id for this page.
-                 When linking across pages from DataManager,
-                 a common link_id will be provided.
-        """
-        import uuid
-
+        """Create X-link group"""
         if not ax_indices:
             return
 
-        if link_id is None:
-            link_id = str(uuid.uuid4())[:8]
-
-        for idx in ax_indices:
-            self.axis_link_ids[idx] = link_id
-
-        self._rebuild_xlink_groups()
+        link_id = self.xlink_mgr.create_group(ax_indices, link_id)
+        self.xlink_groups = self.xlink_mgr.xlink_groups
 
         base_lim = self.axes[ax_indices[0]].get_xlim()
         self.global_xlim_changed.emit(link_id, base_lim[0], base_lim[1])
 
     def remove_from_xlink(self, ax_idx):
-        if ax_idx in self.axis_link_ids:
-            del self.axis_link_ids[ax_idx]
-            self._rebuild_xlink_groups()
+        """Remove axis from X-link group"""
+        self.xlink_mgr.remove_from_group(ax_idx)
+        self._rebuild_xlink_groups()
 
     def on_xlim_changed(self, idx, event_ax):
         if self._updating_xlim:
             return
 
-        link_id = self.axis_link_ids.get(idx)
+        link_id = self.xlink_mgr.get_link_id(idx)
         if not link_id:
             return
 
@@ -1670,98 +1854,8 @@ class PageCanvas(QWidget):
 
     @staticmethod
     def calculate_nice_autoscale_limits(traces_list, axis_dir='x'):
-        """
-        Static method to calculate nice autoscale limits for given traces.
-        
-        Args:
-            traces_list: List of trace dicts, each containing 'line', 'x_factor', 'x_offset', 'y_factor', 'y_offset'
-            axis_dir: 'x' or 'y'
-        
-        Returns:
-            (min_limit, max_limit) tuple or None if no valid data
-        """
-        import numpy as np
-        import math
-        
-        # Collect all data from traces
-        all_values = []
-        
-        for trace in traces_list:
-            if 'line' not in trace:
-                continue
-            
-            line = trace['line']
-            if axis_dir == 'x':
-                data = line.get_xdata()
-                factor = trace.get('x_factor', 1.0)
-                offset = trace.get('x_offset', 0.0)
-            else:  # 'y'
-                data = line.get_ydata()
-                factor = trace.get('y_factor', 1.0)
-                offset = trace.get('y_offset', 0.0)
-            
-            # Apply factor and offset
-            transformed = data * factor + offset
-            
-            # Filter out NaN and inf values
-            valid = transformed[np.isfinite(transformed)]
-            if len(valid) > 0:
-                all_values.extend(valid)
-        
-        if not all_values:
-            return None
-        
-        min_val = float(np.min(all_values))
-        max_val = float(np.max(all_values))
-        
-        # Add 5% margin
-        margin = (max_val - min_val) * 0.05
-        if margin == 0:
-            margin = abs(min_val) * 0.1 if min_val != 0 else 1.0
-        
-        # Calculate nice limits
-        nice_min = PageCanvas._round_to_nice(min_val - margin, round_down=True)
-        nice_max = PageCanvas._round_to_nice(max_val + margin, round_down=False)
-        
-        return (nice_min, nice_max)
-
-    @staticmethod
-    def _round_to_nice(value, round_down=False):
-        """
-        Round value to a nice number for axis limits.
-        Nice numbers are: 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10
-        """
-        import math
-        if value == 0:
-            return 0
-        
-        sign = -1 if value < 0 else 1
-        abs_val = abs(value)
-        
-        # Get order of magnitude
-        order = math.floor(math.log10(abs_val))
-        normalized = abs_val / (10 ** order)
-        
-        # Nice numbers in order
-        nice_numbers = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
-        
-        if round_down:
-            # Find the largest nice number <= normalized
-            selected = nice_numbers[0]
-            for nice in nice_numbers:
-                if nice <= normalized:
-                    selected = nice
-                else:
-                    break
-        else:
-            # Find the smallest nice number >= normalized
-            selected = nice_numbers[-1]
-            for nice in nice_numbers:
-                if nice >= normalized:
-                    selected = nice
-                    break
-        
-        return sign * selected * (10 ** order)
+        """Calculate nice autoscale limits (delegates to AutoscaleCalculator)"""
+        return AutoscaleCalculator.calculate_limits(traces_list, axis_dir)
 
     def apply_global_xlim(self, link_id, xmin, xmax):
         if self._updating_xlim:
@@ -1770,7 +1864,7 @@ class PageCanvas(QWidget):
         self._updating_xlim = True
         try:
             for i, ax in enumerate(self.axes):
-                if self.axis_link_ids.get(i) != link_id:
+                if self.xlink_mgr.get_link_id(i) != link_id:
                     continue
                 cur = ax.get_xlim()
                 if not (np.isclose(cur[0], xmin) and np.isclose(cur[1], xmax)):
@@ -1838,6 +1932,7 @@ class PageCanvas(QWidget):
     # Legend
     # =========================
     def open_legend_settings(self):
+        """Open legend settings dialog"""
         ax = self.current_context_ax
         if not ax:
             ax = self.axes[0]
@@ -1846,56 +1941,14 @@ class PageCanvas(QWidget):
             if a == ax or self.twins.get(a) == ax:
                 idx = i
                 break
-        dlg = LegendSettingsDialog(self.legend_cfgs[idx], self)
+        dlg = LegendSettingsDialog(self.legend_mgr.get_config(idx), self)
         if dlg.exec():
-            self.legend_cfgs[idx] = dlg.get_config()
+            self.legend_mgr.set_config(idx, dlg.get_config())
             self.add_legend()
 
     def add_legend(self):
-        for i, ax in enumerate(self.axes):
-            cfg = self.legend_cfgs[i]
-            mode = cfg['content']
-            loc = cfg['loc']
-
-            if ax.get_legend():
-                ax.get_legend().remove()
-            if self.twins.get(ax) and self.twins[ax].get_legend():
-                self.twins[ax].get_legend().remove()
-            if mode == 'none':
-                continue
-
-            lines = []
-
-            def process_ax(the_ax):
-                for l in the_ax.get_lines():
-                    if l.get_label().startswith('_'):
-                        continue
-                    for t in self.traces.values():
-                        if t['line'] == l:
-                            final = t['label']
-                            if mode == 'file':
-                                final = t['file']
-                            elif mode == 'both':
-                                final = f"{t['label']} @ {t['file']}"
-                            t['line'].set_label(final)
-                            lines.append(l)
-
-            process_ax(ax)
-            if ax in self.twins:
-                process_ax(self.twins[ax])
-            if not lines:
-                continue
-
-            kw = {'draggable': True}
-            if loc == 'manual':
-                pass
-            elif loc == 'outside right':
-                kw.update({'bbox_to_anchor': (1.10, 1), 'loc': 'upper left'})
-            else:
-                kw['loc'] = loc
-
-            labs = [l.get_label() for l in lines]
-            ax.legend(lines, labs, **kw)
+        """Apply legend settings to all axes"""
+        self.legend_mgr.apply_to_axes(self.axes, self.twins, self.traces)
         self.canvas.draw()
 
     # =========================
