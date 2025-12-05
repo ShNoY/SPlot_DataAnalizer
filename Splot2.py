@@ -56,6 +56,9 @@ from PyQt6.QtGui import QAction, QColor, QKeySequence, QDoubleValidator, QDeskto
 # Import Manager
 from import_manager import get_import_manager
 
+# Formula Extension
+from formula_extension import FormulaManagerMixin
+
 # ==========================================
 # 0. Undo Manager
 # ==========================================
@@ -1923,15 +1926,16 @@ class PageCanvas(QWidget):
 # ==========================================
 # 4. Main App
 # ==========================================
-class SPlotApp(QMainWindow):
+class SPlotApp(FormulaManagerMixin, QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SPlot - Ultimate Fixed v23")
+        self.setWindowTitle("SPlot - Ultimate Fixed v23 + Formula Extension")
         self.resize(1280, 800)
         self.file_data_map = {}
         self.current_file = None
         self.undo_mgr = UndoManager(self)
         self.setup_ui()
+        self.setup_formula_support()  # Initialize formula functionality AFTER UI setup
 
     def setup_ui(self):
         mw = QWidget()
