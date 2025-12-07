@@ -111,7 +111,32 @@ class UndoManager:
         self.is_restoring = False
 
 # ==========================================
-# 0b. File History Manager
+# 0b. Draggable Tab Bar
+# ==========================================
+from PyQt6.QtWidgets import QTabBar
+from PyQt6.QtCore import Qt, QMimeData
+from PyQt6.QtGui import QDrag, QPixmap
+
+class DraggableTabBar(QTabBar):
+    """Tab bar that allows dragging tabs to reorder them"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.dragging_index = -1
+        self.setAcceptDrops(True)
+        self.setMovable(True)
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging_index = self.tabAt(event.pos())
+        super().mousePressEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        self.dragging_index = -1
+        super().mouseReleaseEvent(event)
+
+# ==========================================
+# 0c. File History Manager
 # ==========================================
 class FileHistoryManager:
     """Manages .splot file open/save history"""
@@ -1972,6 +1997,9 @@ class PageCanvas(QWidget):
         self.canvas.mpl_connect('pick_event', self.on_pick)
         self.canvas.mpl_connect('button_press_event', self.on_click)
 
+        # Enable drag & drop on canvas
+        self.setAcceptDrops(True)
+
         lay = QVBoxLayout()
         lay.addWidget(self.toolbar)
         lay.addWidget(self.canvas)
@@ -2684,8 +2712,9 @@ class SPlotApp(FormulaManagerMixin, QMainWindow):
 
         sp.addWidget(br)
 
-        # Right side: Tabs
+        # Right side: Tabs with draggable tab bar
         self.tab_widget = QTabWidget()
+        self.tab_widget.setTabBar(DraggableTabBar(self.tab_widget))
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(lambda i: self.tab_widget.removeTab(i))
         self.tab_widget.tabBarDoubleClicked.connect(self.rename_tab)
